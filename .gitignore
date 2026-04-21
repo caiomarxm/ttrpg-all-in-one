@@ -13,8 +13,9 @@ build/
 .ruff_cache/
 *.db
 
-# Local API data (SQLite)
-app/api/var/
+# Local DB files under persistence/var/ (directory stub tracked — see persistence/var/.gitignore)
+persistence/var/*
+!persistence/var/.gitignore
 
 # Beads / Dolt files (added by bd init)
 .dolt/

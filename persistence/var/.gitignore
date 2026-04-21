@@ -1,0 +1,3 @@
+# Keep directory in git; contents are local SQLite files.
+*
+!.gitignore

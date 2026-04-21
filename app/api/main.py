@@ -2,11 +2,13 @@
 
 from fastapi import FastAPI
 
-from modules.shared.router import router as shared_router
+from modules.campaigns.router import router as campaigns_router
+from modules.iam.router import router as iam_router
 
 app = FastAPI(title="TTRPG API", version="0.1.0")
 
-app.include_router(shared_router)
+app.include_router(campaigns_router)
+app.include_router(iam_router)
 
 
 @app.get("/health")
