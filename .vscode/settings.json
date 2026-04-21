@@ -1,0 +1,10 @@
+{
+  "terminal.integrated.env.linux": {
+    "PATH": "${env:HOME}/.asdf/shims:${env:HOME}/.nvm/versions/node/v24.15.0/bin:${env:PATH}"
+  },
+  "terminal.integrated.env.osx": {
+    "PATH": "${env:HOME}/.asdf/shims:${env:HOME}/.nvm/versions/node/v24.15.0/bin:${env:PATH}"
+  },
+  "python.defaultInterpreterPath": "${workspaceFolder}/app/api/.venv/bin/python",
+  "python.terminal.activateEnvironment": true
+}
