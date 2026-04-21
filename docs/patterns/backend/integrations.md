@@ -2,7 +2,7 @@
 
 Patterns for integrating external services and building resilient, observable systems.
 
-Adapted from the fakeflix reference architecture. Python/FastAPI equivalent of NestJS patterns.
+**Guiding principle:** keep it simple. SDK and HTTP library imports live in client classes only (`http/client/`). Services work with plain Python objects. No port interfaces, no adapter hierarchies — just good encapsulation.
 
 All paths below are relative to `app/api/`.
 
@@ -61,6 +61,8 @@ class LLMClient:
 
 ### Pattern 3: SDK client (vendor SDKs)
 
+Wrap the SDK in a plain client class. Map SDK types to Pydantic at the class boundary so services never see the library's types.
+
 ```python
 # modules/assistant/http/client/anthropic_client.py
 import anthropic
@@ -72,7 +74,7 @@ class CompletionResult(BaseModel):
     input_tokens: int
     output_tokens: int
 
-class AnthropicAdapter:
+class AnthropicClient:
     def __init__(self, config: AssistantConfig):
         self._client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
 
@@ -82,7 +84,6 @@ class AnthropicAdapter:
             max_tokens=4096,
             messages=[m.model_dump() for m in messages],
         )
-        # SDK type mapped to Pydantic at the boundary — service never sees Anthropic types
         return CompletionResult(
             content=raw.content[0].text,
             model=raw.model,
@@ -91,37 +92,38 @@ class AnthropicAdapter:
         )
 ```
 
----
+### Pattern 4: Config-driven client selection (multiple providers)
 
-## AI Provider Port Pattern
-
-The Assistant BC uses a port/adapter pattern so the LLM provider is swappable at config time.
+When you actually have two or more concrete implementations, a `Protocol` (or `ABC`) is the right tool — it documents the contract and keeps the service clean. Don't add it speculatively; add it the moment the second implementation exists.
 
 ```python
-# modules/assistant/core/interface/ai_provider_port.py
+# modules/assistant/http/client/ai_client.py
 from typing import Protocol
 
-class AIProviderPort(Protocol):
-    async def complete(self, messages: list[Message]) -> str: ...
+class AIClient(Protocol):
+    async def complete(self, messages: list[Message]) -> CompletionResult: ...
 
-class ImageGenPort(Protocol):
-    async def generate(self, prompt: str) -> str: ...  # returns asset URL
+# modules/assistant/http/client/anthropic_client.py
+class AnthropicClient:  # satisfies AIClient structurally — no explicit `implements`
+    async def complete(self, messages: list[Message]) -> CompletionResult: ...
 
-# modules/assistant/config.py
-def get_ai_provider(config: AssistantConfig) -> AIProviderPort:
+# modules/assistant/http/client/openai_client.py
+class OpenAIClient:
+    async def complete(self, messages: list[Message]) -> CompletionResult: ...
+
+# modules/assistant/dependencies.py
+def get_ai_client(config: AssistantConfig = Depends(get_assistant_config)) -> AIClient:
     match config.llm_provider:
-        case "anthropic": return AnthropicAdapter(config)
-        case "openai":    return OpenAIAdapter(config)
-        case "ollama":    return OllamaAdapter(config)
+        case "anthropic": return AnthropicClient(config)
+        case "openai":    return OpenAIClient(config)
         case _: raise ValueError(f"Unknown LLM provider: {config.llm_provider}")
-```
 
-Service never knows the concrete implementation:
-
-```python
+# Service depends on the Protocol — swapping providers requires zero service changes
 class AssistantService:
-    def __init__(self, ai: AIProviderPort, image_gen: ImageGenPort): ...
+    def __init__(self, ai_client: AIClient): ...
 ```
+
+The `Protocol` lives alongside the clients (`http/client/`), not in a separate `core/interface/` folder — it is an implementation detail of the client layer, not a cross-BC contract.
 
 ---
 

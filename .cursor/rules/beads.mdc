@@ -1,0 +1,55 @@
+---
+description: Beads (bd) for task tracking and persistent memory — CLI workflow and session completion
+alwaysApply: true
+---
+
+# Beads — tasks & memory
+
+This project uses **`bd` (Beads)** for **issue/task tracking** and **persistent knowledge**. Issues live in-repo (see `.beads/`). Full command reference and session-close steps: run **`bd prime`** in the terminal.
+
+## Task management (required)
+
+- Use **`bd` for all task tracking**. Do **not** use Cursor TodoWrite, TaskCreate, or markdown TODO lists for project work.
+- **Find work:** `bd ready`
+- **Inspect:** `bd show <id>`
+- **Claim:** `bd update <id> --claim`
+- **Create work:** `bd create "..."` when splitting or filing follow-ups
+- **Finish:** `bd close <id>` (or update status per your workflow — follow `bd prime` / `bd list` conventions)
+- **Sync issues DB with remote:** `bd dolt push` (see session completion below)
+
+## Memory management (required)
+
+- Store durable facts, decisions, and context with **`bd remember`** (Beads-managed memory).
+- Do **not** create or rely on **`MEMORY.md`** or ad-hoc memory files for the same purpose.
+
+## Session completion (mandatory before stopping)
+
+Work is **not** complete until **`git push`** succeeds. Before ending a session:
+
+1. **File issues** for any remaining work (`bd create` / updates as needed).
+2. **Quality gates** if code changed — tests, linters, builds.
+3. **Update Beads** — close finished items, reflect in-progress state.
+4. **Push everything** (issues + git):
+   ```bash
+   git pull --rebase
+   bd dolt push
+   git push
+   git status   # must be up to date with origin
+   ```
+5. **Clean up** — clear stashes, prune remote branches as appropriate.
+6. **Verify** — all changes committed and pushed; `git status` clean relative to intent.
+7. **Hand off** — leave enough context for the next session (what changed, open issues, blockers).
+8. If push fails, resolve and retry until it succeeds; never stop with “ready for you to push.”
+
+## Quick reference
+
+| Goal | Command |
+|------|---------|
+| Available work | `bd ready` |
+| Issue detail | `bd show <id>` |
+| Claim | `bd update <id> --claim` |
+| Complete | `bd close <id>` |
+| Persistent note | `bd remember ...` |
+| Deep reference | `bd prime` |
+
+Project-wide agent instructions (including this workflow in long form) are in **`CLAUDE.md`**.

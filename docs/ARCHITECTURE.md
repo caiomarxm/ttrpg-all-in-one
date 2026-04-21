@@ -4,7 +4,7 @@
 
 **Modular monolith** (FastAPI). Each bounded context is a self-contained Python package with exclusive data ownership. Module boundaries are strict enough that any BC could be extracted to a microservice if scale demands it. No shared models across packages.
 
-**Hexagonal architecture** for all external interactions. Every external service (database, AI providers, storage, auth) is accessed through a port interface with swappable adapters. Internal business logic never imports an SDK directly.
+**Three clear layers** within every BC: HTTP entrypoints (routers), business logic (services), and data access (repositories). External APIs and SDKs are wrapped in client classes under `http/client/` — services receive a client object and never import an SDK directly. Keep it simple: YAGNI, KISS, good encapsulation.
 
 ---
 
@@ -69,14 +69,14 @@ content_tsv tsvector GENERATED ALWAYS AS (
 ## Real-Time Infrastructure
 
 ```
-NestJS BC  →  publish event  →  Centrifugo  →  WebSocket  →  Browser clients
-                                     ↕
-                               NATS JetStream
-                             (message persistence
-                              + history replay)
+FastAPI BC  →  publish event  →  Centrifugo  →  WebSocket  →  Browser clients
+                                      ↕
+                                NATS JetStream
+                              (message persistence
+                               + history replay)
 ```
 
-**Centrifugo** is deployed as a dedicated service. NestJS backend publishes events via Centrifugo's HTTP API or gRPC. All WebSocket connections are managed by Centrifugo — the application server is stateless.
+**Centrifugo** is deployed as a dedicated service. The FastAPI backend publishes events via Centrifugo's HTTP API. All WebSocket connections are managed by Centrifugo — the application server is stateless.
 
 **NATS JetStream** runs alongside Centrifugo as the broker engine. Self-hosted (single binary, ~10 MB idle). JetStream provides durable message history and replay, covering Session history and connection recovery without a managed cache service.
 
@@ -86,20 +86,15 @@ Centrifugo rooms map 1:1 to live sessions. Presence channels (who's connected) a
 
 ## AI Layer
 
-The Assistant BC exposes a tool registry. Every AI call goes through a port — no SDK import in business logic.
+The Assistant BC exposes a tool registry. AI provider SDK calls are wrapped in client classes under `http/client/` — `AssistantService` never imports an SDK directly.
 
 ```
 AssistantService
-  └── AIProviderPort
-        ├── AnthropicAdapter     (Claude models)
-        ├── OpenAIAdapter        (GPT models)
-        └── OllamaAdapter        (local / self-hosted)
-  └── ImageGenPort
-        ├── DallEAdapter         (OpenAI DALL-E)
-        └── ReplicateAdapter     (Stable Diffusion models)
+  └── AnthropicClient  (or OpenAIClient / OllamaClient — chosen by config)
+  └── ImageGenClient   (DALL-E or Replicate — chosen by config)
 ```
 
-**Provider selection:** users choose their LLM model per conversation; GMs choose the image generation provider in campaign settings. The Assistant BC routes to the correct adapter at runtime.
+**Provider selection:** a simple factory in `config.py` / `dependencies.py` reads `ASSISTANT_LLM_PROVIDER` and returns the right client. Users choose their LLM model per conversation; GMs choose the image generation provider in campaign settings.
 
 **Tool registry:** the Assistant calls the same API endpoints as the frontend (dual-purpose API principle). No special internal shortcuts — if the frontend can do it, the AI can do it through the same interface.
 
@@ -109,13 +104,13 @@ AssistantService
 
 ## Authentication & Authorization
 
-**AuthN:** Firebase Auth. Clients obtain a Firebase JWT; all NestJS requests verify it via the Firebase Admin SDK. A `FirebaseAuthAdapter` wraps the Admin SDK — the IAM module never imports Firebase directly in business logic.
+**AuthN:** Firebase Auth. Clients obtain a Firebase JWT; all FastAPI requests verify it via the Firebase Admin SDK. A `FirebaseClient` in `modules/shared/module/auth/` wraps the Admin SDK — services receive the client via DI and never import Firebase directly.
 
 **AuthZ — two-layer model:**
 1. **Coarse-grained (Campaigns BC):** GM vs Player, resolved per campaign. Every other BC trusts this role.
 2. **Fine-grained (each BC):** resource-level access rules enforced by the owning BC. Example: Wiki enforces per-folder/per-document ACL; Session enforces token ownership.
 
-The IAM module stores AuthZ data (resource grants, custom permissions) in its own Cloud SQL instance and exposes it via an internal NestJS interface — not a network call.
+The IAM module stores AuthZ data (resource grants, custom permissions) in its own Cloud SQL instance and exposes it via its `public_api/` Protocol — not a network call.
 
 ---
 
@@ -137,30 +132,17 @@ The IAM module stores AuthZ data (resource grants, custom permissions) in its ow
 
 ---
 
-## Hexagonal Adapter Conventions
+## External client encapsulation
 
-All external interactions follow the same pattern:
+SDK and HTTP clients live in `http/client/` inside each BC. The client is responsible for all SDK/HTTP details — auth headers, timeouts, request/response mapping to Pydantic types. Services receive the client via DI and work with plain Python types.
 
-```
-// Port (defined in the BC, no external imports)
-interface AssetStoragePort {
-  upload(key: string, buffer: Buffer, mimeType: string): Promise<string>
-  getSignedUploadUrl(key: string): Promise<string>
-  delete(key: string): Promise<void>
-}
-
-// Adapter (infrastructure layer, imports the SDK)
-class GCSAdapter implements AssetStoragePort { ... }
-class MinIOAdapter implements AssetStoragePort { ... }  // local dev
-```
-
-This pattern applies to: storage, AI providers, image generation, Firebase Auth, email, and any future third-party service.
+This applies to: storage (GCS/MinIO), AI providers, image generation, Firebase Auth, payment gateways, and any future third-party service. Swap providers by updating the factory function in `dependencies.py` — no service code changes needed.
 
 ---
 
 ## Open Decisions
 
 - **Rich text collaboration (Yjs):** TipTap supports real-time collaborative editing via Yjs. Not in v1 — Wiki documents are single-author. Architecture supports adding it later (Centrifugo's pub/sub is a natural Yjs provider transport).
-- **Image generation provider defaults:** DALL-E 3 vs Replicate SD models — benchmark quality and cost before setting a default. Both adapters ship in v1.
+- **Image generation provider defaults:** DALL-E 3 vs Replicate SD models — benchmark quality and cost before setting a default. Both clients ship in v1.
 - **Compendium ingestion pipeline:** SRD data needs a one-time import script. Format and tooling TBD when Characters BC is being built.
 - **Session snapshot frequency:** how often live session state is checkpointed to Cloud SQL is a tuning decision for the Session BC implementation.

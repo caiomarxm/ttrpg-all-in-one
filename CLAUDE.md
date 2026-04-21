@@ -73,7 +73,7 @@ bd close <id>         # Complete work
 3. **Independence** — each module has its own database, config, and tests
 4. **Individual scale** — modules scale independently without affecting others
 5. **Explicit communication** — BCs talk via Protocols and HTTP clients; no hidden dependencies
-6. **Replaceability** — modules can be swapped (e.g. AnthropicAdapter ↔ OpenAIAdapter)
+6. **Replaceability** — clients can be swapped via config-driven factory; SDK imports stay inside client classes only
 7. **Deployment independence** — module boundaries are strict enough to extract to a microservice
 8. **State isolation** ⚠️ **CRITICAL** — no shared DB tables, no cross-BC foreign keys, no cross-BC session imports
 9. **Observability** — structured logging with module context on every service operation
@@ -106,10 +106,15 @@ app/
     package.json
 docker-compose.yml
 docs/
+  PRINCIPLES.md      ← philosophy, 10 principles, local dev commands
   SCOPE.md
   ARCHITECTURE.md
-  CODING-PATTERNS.md      ← read this when writing services, repos, routers
-  INTEGRATION-PATTERNS.md ← read this when integrating external services
+  patterns/backend/
+    data-layer.md       ← models, repos, migrations, transactions
+    api-layer.md        ← routers, DTOs, DI, enums
+    module-design.md    ← BC layout, cross-BC rules, naming
+    integrations.md     ← external API clients, logging, resilience
+    testing.md          ← test strategy, unit / integration / e2e layout
 ```
 
 ### Module internal structure
@@ -118,7 +123,6 @@ docs/
 modules/{bc}/
   core/
     service/         ← business logic
-    interface/       ← Protocols for cross-BC communication
     enum/
   persistence/
     model/           ← SQLModel table definitions (table=True)
@@ -131,7 +135,9 @@ modules/{bc}/
       response/      ← Pydantic response schemas
     client/          ← external API/SDK clients
   public_api/        ← Protocol exposed to other BCs
-  __test__/e2e/
+  __test__/
+    integration/     ← BC-scoped integration tests
+    e2e/               ← BC-level API / workflow tests
   config.py          ← Pydantic BaseSettings, env prefix = BC_NAME_
   router.py          ← aggregates sub-routers, imported by main.py
 ```
@@ -157,11 +163,13 @@ core/service/
 - FastAPI router, DTO, DI, Pydantic schema, or enum → `docs/patterns/backend/api-layer.md`
 - New BC, module boundaries, cross-BC communication, or naming → `docs/patterns/backend/module-design.md`
 - External HTTP API, SDK, AI provider, logging, or resilience → `docs/patterns/backend/integrations.md`
+- Test strategy, pytest layout, or where to place `__test__` folders → `docs/patterns/backend/testing.md`
 
 **Writing frontend code:**
 - _React patterns coming soon — see `docs/patterns/frontend/` when available_
 
 **Architecture / design tasks:**
+- Philosophy, ten principles, fakeflix reference, uvicorn/npm/pytest commands → `docs/PRINCIPLES.md`
 - BC scope, data ownership, or bounded context definitions → `docs/SCOPE.md`
 - Tech stack, infra, or storage decisions → `docs/ARCHITECTURE.md`
 
@@ -169,6 +177,7 @@ core/service/
 
 | Task | Doc | Section |
 |---|---|---|
+| Overall philosophy / principles / dev servers | `PRINCIPLES.md` | Philosophy; Architecture principles; Build & run locally |
 | New SQLModel model | `data-layer.md` | Model Naming and State Isolation |
 | New repository | `data-layer.md` | Repository Pattern |
 | Write operation | `data-layer.md` | Transaction Management |
@@ -180,9 +189,12 @@ core/service/
 | Public API surface | `module-design.md` | Public API — Protocol as Cross-BC Contract |
 | Naming anything | `module-design.md` | Naming Conventions |
 | External HTTP/SDK client | `integrations.md` | External API Client Encapsulation |
-| AI provider adapter | `integrations.md` | AI Provider Port Pattern |
+| AI provider client / config-driven selection | `integrations.md` | Config-driven client selection |
 | Structured logging | `integrations.md` | Structured Logging |
 | Circuit breaker / retry | `integrations.md` | Circuit Breakers, Timeouts and Retries |
+| Unit test layout / colocation | `testing.md` | Directory layout |
+| Integration vs e2e scope | `testing.md` | Philosophy & Directory layout |
+| Running pytest | `testing.md` | Running tests |
 
 ---
 

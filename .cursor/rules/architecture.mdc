@@ -1,0 +1,56 @@
+---
+description: Modular monolith architecture and progressive loading of docs/ for task-specific context
+alwaysApply: true
+---
+
+# Architecture & documentation context
+
+This repo is a **modular monolith** (DDD bounded contexts): backend `app/api/modules/`, frontend `app/web/src/features/`, mirroring BC names. **State isolation is critical**—no shared DB tables, no cross-BC foreign keys, no cross-BC session imports. BCs communicate via Protocols and HTTP clients only.
+
+APIs are **dual-purpose**: design for both the web UI and AI/agent tool calls.
+
+## Progressive documentation (required)
+
+**Do not load all docs at once.** For each task, read **only** the files below that match the work. Use the editor Read tool (or open the file) to pull in full content when needed.
+
+### Backend — pick by layer / concern
+
+| Situation | Read |
+|-----------|------|
+| SQLModel model, repository, migration, transactions | `docs/patterns/backend/data-layer.md` |
+| FastAPI router, DTOs, DI, Pydantic schemas, enums | `docs/patterns/backend/api-layer.md` |
+| New BC, module boundaries, cross-BC communication, naming | `docs/patterns/backend/module-design.md` |
+| External HTTP/SDK clients, logging, retries, resilience | `docs/patterns/backend/integrations.md` |
+| Test strategy, pytest layout, unit / integration / e2e placement | `docs/patterns/backend/testing.md` |
+
+### Architecture / product scope
+
+| Situation | Read |
+|-----------|------|
+| Philosophy, 10 principles, fakeflix reference, local dev commands | `docs/PRINCIPLES.md` |
+| BC scope, data ownership, ubiquitous language | `docs/SCOPE.md` |
+| Stack, infra, storage, high-level structure | `docs/ARCHITECTURE.md` |
+
+### Frontend
+
+React patterns: when present, prefer `docs/patterns/frontend/` (load files relevant to the feature).
+
+### Quick mapping
+
+- Philosophy, stack blurbs, ten principles, local dev commands → `docs/PRINCIPLES.md`
+- New SQLModel / repo / writes → `docs/patterns/backend/data-layer.md`
+- Routers / schemas / config enums → `docs/patterns/backend/api-layer.md`
+- New module or cross-BC contracts → `docs/patterns/backend/module-design.md`
+- External API clients, observability, resilience → `docs/patterns/backend/integrations.md`
+- Tests, coverage expectations, where to put `__test__` folders → `docs/patterns/backend/testing.md`
+
+## Invariants (short)
+
+- Namespace packages only — **no** `__init__.py`
+- **Pydantic** for DTOs, config, external types
+- **No ORM in services**; **no repositories in routers** (services only)
+- BC-prefixed table names; **StrEnum** for status/role/type fields
+- **No cross-BC DB access** — use Protocols or HTTP clients
+- One transaction per write: `with session.begin()`
+
+Session workflow, issue tracking (`bd`), and push protocol live in **`CLAUDE.md`** at the repo root. High-level principles and dev commands: **`docs/PRINCIPLES.md`**. Module tree: **`docs/patterns/backend/module-design.md`**. Testing: **`docs/patterns/backend/testing.md`**.

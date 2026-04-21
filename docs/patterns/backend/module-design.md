@@ -14,7 +14,6 @@ Each BC is a self-contained directory under `modules/`. No shared state, no shar
 modules/{bc}/
   core/
     service/         ← business logic — orchestrates repositories and clients
-    interface/       ← Protocols for cross-BC communication
     enum/            ← StrEnum definitions
   persistence/
     model/           ← SQLModel table=True definitions
@@ -28,10 +27,14 @@ modules/{bc}/
       response/      ← Pydantic response schemas
     client/          ← HTTP/SDK clients for external APIs
   public_api/        ← Protocol exposed to other BCs (the only cross-BC import surface)
-  __test__/e2e/
+  __test__/
+    integration/     ← BC-scoped DB + service integration tests
+    e2e/             ← BC-level API / workflow tests
   config.py          ← Pydantic BaseSettings, env prefix = {BC}_
   router.py          ← aggregates sub-routers, imported by main.py
 ```
+
+**Testing strategy** (what each layer should prove, naming, running pytest) lives in **`testing.md`**. This section only defines **where** folders live.
 
 Unit tests live alongside the file they test:
 
@@ -117,7 +120,7 @@ class WikiDocument(BaseModel, table=True):
 | Folders | snake_case | `core/service`, `http/router`, `public_api` |
 | Files | snake_case with suffix | `campaign_service.py`, `campaign_router.py` |
 | Classes | PascalCase | `CampaignService`, `CampaignRepository` |
-| Protocols | PascalCase ending in `PublicApi` or `Port` | `CampaignsPublicApi`, `AIProviderPort` |
+| Cross-BC Protocols | PascalCase ending in `PublicApi` | `CampaignsPublicApi`, `WikiPublicApi` |
 | Enums | PascalCase | `MemberRole`, `CampaignStatus` |
 | Functions / methods | snake_case | `get_campaign`, `find_active_by_owner_id` |
 | Variables | snake_case | `campaign_id`, `campaign_service` |
@@ -138,8 +141,9 @@ class WikiDocument(BaseModel, table=True):
 | Router function > 15 lines with conditions | Move logic to service |
 | Transaction on a read-only method | Remove — reads don't need transactions |
 | `__tablename__` without BC prefix | Prefix: `campaign_member`, not `member` |
-| Cross-BC session import | Use the BC's Protocol or HTTP client |
+| Cross-BC session import | Use the BC's `public_api/` Protocol or HTTP client |
 | Importing `CampaignService` from another BC | Import `CampaignsPublicApi` Protocol instead |
 | Raw string `"gm"` / `"active"` instead of enum | `MemberRole.GM` / `CampaignStatus.ACTIVE` |
 | `dict` or `dataclass` for request/response | Use Pydantic `BaseModel` |
-| Raw SDK types leaking into services | Wrap at client boundary with a Pydantic model |
+| SDK import inside a service | Move to a client class in `http/client/` |
+| Raw SDK types leaking into services | Wrap in Pydantic inside the client class |
