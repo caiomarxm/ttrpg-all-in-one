@@ -87,7 +87,6 @@ bd close <id>         # Complete work
 app/
   api/
     modules/         ← all bounded context modules
-      shared/        ← base classes, auth, logger, http client
       iam/
       campaigns/
       wiki/
@@ -104,9 +103,14 @@ app/
       features/      ← mirrors BC names
       shared/
     package.json
+persistence/
+  alembic.ini        ← Alembic bootstrap for the monorepo (provisional SQLite under var/ until Compose)
+  migrations/
+  var/
 docker-compose.yml
+CONTRIBUTING.md      ← run backend/frontend locally, toolchain
 docs/
-  PRINCIPLES.md      ← philosophy, 10 principles, local dev commands
+  PRINCIPLES.md      ← philosophy & 10 architecture principles only
   SCOPE.md
   ARCHITECTURE.md
   patterns/backend/
@@ -169,7 +173,8 @@ core/service/
 - _React patterns coming soon — see `docs/patterns/frontend/` when available_
 
 **Architecture / design tasks:**
-- Philosophy, ten principles, fakeflix reference, uvicorn/npm/pytest commands → `docs/PRINCIPLES.md`
+- Philosophy, ten principles, fakeflix reference → `docs/PRINCIPLES.md`
+- Clone, toolchain, uvicorn/npm/pytest → **`CONTRIBUTING.md`** (repo root)
 - BC scope, data ownership, or bounded context definitions → `docs/SCOPE.md`
 - Tech stack, infra, or storage decisions → `docs/ARCHITECTURE.md`
 
@@ -177,7 +182,8 @@ core/service/
 
 | Task | Doc | Section |
 |---|---|---|
-| Overall philosophy / principles / dev servers | `PRINCIPLES.md` | Philosophy; Architecture principles; Build & run locally |
+| Philosophy / architecture principles | `docs/PRINCIPLES.md` | Philosophy; Architecture principles (numbered) |
+| Run stack locally / toolchain | `CONTRIBUTING.md` (repo root) | Build and run; tests |
 | New SQLModel model | `data-layer.md` | Model Naming and State Isolation |
 | New repository | `data-layer.md` | Repository Pattern |
 | Write operation | `data-layer.md` | Transaction Management |
@@ -211,16 +217,4 @@ core/service/
 
 ## Build & Test
 
-```bash
-# Backend
-cd app/api
-uv run uvicorn main:app --reload
-
-# Frontend
-cd app/web
-npm run dev
-
-# Tests (backend)
-cd app/api
-uv run pytest
-```
+See **`CONTRIBUTING.md`** at the repo root for commands (`uvicorn`, `npm`, `pytest`).

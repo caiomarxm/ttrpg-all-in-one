@@ -34,6 +34,10 @@ modules/{bc}/
   router.py          ← aggregates sub-routers, imported by main.py
 ```
 
+### `modules/shared/` — not a bounded context
+
+`modules/shared/` is **only** for tiny, dependency-light helpers reused by multiple BCs (pure functions, constants, trivial types). It **must not** mirror the BC layout above — no `core/`, `http/`, `persistence/`, `router.py`, `public_api/`, migrations, or SQLModel models. Anything with HTTP entrypoints, a database, or cross-BC contracts belongs in a real BC (or in `iam/` for auth plumbing).
+
 **Testing strategy** (what each layer should prove, naming, running pytest) lives in **`testing.md`**. This section only defines **where** folders live.
 
 Unit tests live alongside the file they test:

@@ -1,6 +1,6 @@
-# Platform principles & local development
+# Platform principles
 
-High-level philosophy, the ten architecture principles, and commands to run the stack locally. Detailed patterns live under **`docs/patterns/backend/`**; infra and storage live in **`ARCHITECTURE.md`**.
+Philosophy and the ten architecture principles for this codebase. Operational setup (running the stack, toolchain) is **`CONTRIBUTING.md`** at the repo root. Detailed patterns live under **`docs/patterns/backend/`**; infra and storage live in **`ARCHITECTURE.md`**.
 
 ---
 
@@ -250,23 +250,3 @@ Before writing or reviewing any BC code:
 ## Critical rules (summary)
 
 Namespace packages (no `__init__.py`), Pydantic everywhere, no ORM in services, no repositories in routers, BC-prefixed tables, StrEnum for status fields, one transaction per write. Full patterns: **`docs/patterns/backend/`**.
-
----
-
-## Build & run locally
-
-```bash
-# Backend
-cd app/api
-uv run uvicorn main:app --reload
-
-# Frontend
-cd app/web
-npm run dev
-
-# Backend tests
-cd app/api
-uv run pytest
-```
-
-Docker Compose is used for local dependencies (see repo root `docker-compose.yml`).

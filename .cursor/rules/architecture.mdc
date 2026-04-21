@@ -27,7 +27,8 @@ APIs are **dual-purpose**: design for both the web UI and AI/agent tool calls.
 
 | Situation | Read |
 |-----------|------|
-| Philosophy, 10 principles, fakeflix reference, local dev commands | `docs/PRINCIPLES.md` |
+| Philosophy, 10 principles, fakeflix reference | `docs/PRINCIPLES.md` |
+| Run locally, toolchain, tests | **`CONTRIBUTING.md`** (repo root) |
 | BC scope, data ownership, ubiquitous language | `docs/SCOPE.md` |
 | Stack, infra, storage, high-level structure | `docs/ARCHITECTURE.md` |
 
@@ -37,7 +38,8 @@ React patterns: when present, prefer `docs/patterns/frontend/` (load files relev
 
 ### Quick mapping
 
-- Philosophy, stack blurbs, ten principles, local dev commands → `docs/PRINCIPLES.md`
+- Philosophy, stack blurbs, ten principles → `docs/PRINCIPLES.md`
+- Clone, install, dev servers → **`CONTRIBUTING.md`**
 - New SQLModel / repo / writes → `docs/patterns/backend/data-layer.md`
 - Routers / schemas / config enums → `docs/patterns/backend/api-layer.md`
 - New module or cross-BC contracts → `docs/patterns/backend/module-design.md`
@@ -53,4 +55,4 @@ React patterns: when present, prefer `docs/patterns/frontend/` (load files relev
 - **No cross-BC DB access** — use Protocols or HTTP clients
 - One transaction per write: `with session.begin()`
 
-Session workflow, issue tracking (`bd`), and push protocol live in **`CLAUDE.md`** at the repo root. High-level principles and dev commands: **`docs/PRINCIPLES.md`**. Module tree: **`docs/patterns/backend/module-design.md`**. Testing: **`docs/patterns/backend/testing.md`**.
+Session workflow, issue tracking (`bd`), and push protocol live in **`CLAUDE.md`** at the repo root. Principles: **`docs/PRINCIPLES.md`**. Run the stack: **`CONTRIBUTING.md`**. Module tree: **`docs/patterns/backend/module-design.md`**. Testing: **`docs/patterns/backend/testing.md`**.

@@ -20,6 +20,8 @@ Expectations:
 
 Feature work should add or extend **unit** tests by default. New BC surfaces or persistence-heavy flows should add **integration** tests. **E2E** grows with user-visible flows and dual-purpose (frontend + agent) APIs.
 
+**SQLite vs Postgres:** use **SQLite in-memory** (or ephemeral file) **only inside pytest fixtures** for fast, isolated DB tests. **PostgreSQL** for day-to-day development comes from **Docker Compose** in a dedicated infrastructure task — do not rely on SQLite files as the long-term dev database story.
+
 ---
 
 ## Directory layout
