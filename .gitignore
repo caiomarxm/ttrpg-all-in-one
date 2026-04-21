@@ -1,3 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.db
+
+# Local API data (SQLite)
+app/api/var/
 
 # Beads / Dolt files (added by bd init)
 .dolt/
