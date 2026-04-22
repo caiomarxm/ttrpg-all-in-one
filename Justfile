@@ -8,3 +8,9 @@ format-backend:
 
 dev-backend:
   cd app/api && uv run uvicorn main:app --reload
+
+lint-frontend:
+  cd app/web && npm run lint
+
+format-frontend:
+  cd app/web && npm run format

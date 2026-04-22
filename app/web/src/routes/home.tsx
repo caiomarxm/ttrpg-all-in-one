@@ -18,9 +18,7 @@ export function HomeRoute() {
   return (
     <main>
       <h1>Tabletop RPG</h1>
-      <p>
-        React · Vite · TanStack Router · TanStack Query · Zustand
-      </p>
+      <p>React · Vite · TanStack Router · TanStack Query · Zustand</p>
       <dl>
         <dt>Query</dt>
         <dd>{bootstrap?.status ?? '…'}</dd>
