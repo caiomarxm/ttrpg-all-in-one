@@ -10,6 +10,9 @@ test-backend:
   cd app/api && uv run pytest
 
 dev-backend:
+  set -a
+  if [ -f .env.local ]; then . ./.env.local; fi
+  set +a
   cd app/api && uv run uvicorn main:app --reload
 
 lint-frontend:

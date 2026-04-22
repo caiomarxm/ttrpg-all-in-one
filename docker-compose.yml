@@ -1,0 +1,84 @@
+services:
+  postgres-campaigns:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: campaigns
+      POSTGRES_USER: ttrpg
+      POSTGRES_PASSWORD: ttrpg
+    ports:
+      - "${CAMPAIGNS_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_campaigns_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ttrpg -d campaigns"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgres-wiki:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: wiki
+      POSTGRES_USER: ttrpg
+      POSTGRES_PASSWORD: ttrpg
+    ports:
+      - "${WIKI_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres_wiki_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ttrpg -d wiki"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "${NATS_CLIENT_PORT:-4222}:4222"
+      - "${NATS_MONITOR_PORT:-8222}:8222"
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:8222/varz >/dev/null || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  centrifugo:
+    image: centrifugo/centrifugo:v6
+    depends_on:
+      nats:
+        condition: service_healthy
+    command: ["centrifugo", "--config=/centrifugo/config.json"]
+    ports:
+      - "${CENTRIFUGO_HTTP_PORT:-8000}:8000"
+    volumes:
+      - ./infra/centrifugo/config.json:/centrifugo/config.json:ro
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minio}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minio-dev-password}"
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  postgres_campaigns_data:
+  postgres_wiki_data:
+  nats_data:
+  minio_data:

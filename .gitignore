@@ -17,6 +17,9 @@ build/
 persistence/var/*
 !persistence/var/.gitignore
 
+# Local secrets / env overlays
+.env.local
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
