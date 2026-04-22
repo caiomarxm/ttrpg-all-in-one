@@ -6,6 +6,9 @@ lint-backend:
 format-backend:
   cd app/api && uv run ruff format .
 
+test-backend:
+  cd app/api && uv run pytest
+
 dev-backend:
   cd app/api && uv run uvicorn main:app --reload
 

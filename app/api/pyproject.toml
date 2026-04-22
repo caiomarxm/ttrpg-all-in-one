@@ -14,8 +14,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "aiosqlite>=0.21",
     "httpx>=0.27",
     "pre-commit>=3.8",
+    "psycopg[binary]>=3.2",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.6",
@@ -48,3 +50,10 @@ select = ["E", "F", "I", "UP", "B"]
 quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "e2e: tests that require external infrastructure (postgres, compose, etc.)",
+]
