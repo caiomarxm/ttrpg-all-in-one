@@ -14,3 +14,6 @@ lint-frontend:
 
 format-frontend:
   cd app/web && npm run format
+
+test-frontend:
+  cd app/web && npm test
