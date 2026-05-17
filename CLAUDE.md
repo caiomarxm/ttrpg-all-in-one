@@ -2,7 +2,7 @@
 
 This file provides instructions and context for AI coding agents working on this project.
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
+<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ccf33ec3 -->
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
@@ -21,6 +21,8 @@ bd close <id>         # Complete work
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+
+**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
 
 ## Session Completion
 
@@ -103,16 +105,24 @@ app/
       features/      ← mirrors BC names
       shared/
     package.json
+services/
+  discord_bot/       ← O Cronista Discord bot (pycord, separate runtime)
+    entrypoints/     ← bot.py bootstrap + cogs/
+    core/            ← business logic (recording, transcription)
+    tests/
+    Dockerfile
+    pyproject.toml
 persistence/
   alembic.ini        ← Alembic bootstrap for the monorepo (provisional SQLite under var/ until Compose)
   migrations/
   var/
-docker-compose.yml
+docker-compose.yml   ← includes discord-bot service; `just run` starts everything
 CONTRIBUTING.md      ← run backend/frontend locally, toolchain
 docs/
   PRINCIPLES.md      ← philosophy & 10 architecture principles only
   SCOPE.md
   ARCHITECTURE.md
+  adr/               ← Architecture Decision Records
   patterns/backend/
     data-layer.md       ← models, repos, migrations, transactions
     api-layer.md        ← routers, DTOs, DI, enums
@@ -218,3 +228,12 @@ core/service/
 ## Build & Test
 
 See **`CONTRIBUTING.md`** at the repo root for commands (`uvicorn`, `npm`, `pytest`).
+
+```bash
+just run            # start everything (API infra + Discord bot) via Docker Compose
+just test-bot-unit  # unit tests for Discord bot
+just test-bot       # all tests for Discord bot
+just lint-bot       # ruff check/format for Discord bot
+```
+
+The Discord bot lives in `services/discord_bot/`. Its env vars (`BOT_TOKEN`, `SERVER_ID`) go in `services/discord_bot/.env` (gitignored — copy from `.env.example`).

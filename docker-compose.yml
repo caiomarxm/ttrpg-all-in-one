@@ -77,6 +77,20 @@ services:
       timeout: 5s
       retries: 30
 
+  discord-bot:
+    build:
+      context: ./services/discord_bot
+      dockerfile: Dockerfile
+    env_file: ./services/discord_bot/.env
+    restart: unless-stopped
+    volumes:
+      - ./services/discord_bot:/workspace/app
+      - ./data/recordings:/data/recordings
+    command: >
+      python -m watchfiles
+      "python /workspace/app/entrypoints/bot.py"
+      /workspace/app
+
 volumes:
   postgres_campaigns_data:
   postgres_wiki_data:

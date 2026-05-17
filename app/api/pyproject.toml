@@ -3,7 +3,7 @@ name = "ttrpg-api"
 version = "0.1.0"
 description = "TTRPG platform API (modular monolith)"
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.14",
     "fastapi>=0.115",
@@ -39,7 +39,7 @@ namespaces = true
 py-modules = ["main"]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 120
 fix = true
 
