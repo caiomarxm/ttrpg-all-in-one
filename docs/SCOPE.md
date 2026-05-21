@@ -10,7 +10,7 @@ An all-in-one platform for Game Masters to build, manage, and run tabletop RPG c
 
 The bounded context split is the most important architectural decision. Each BC has exclusive data ownership, an independent lifecycle, and a distinct ubiquitous language.
 
-The central rule for authorization: **Campaigns manages membership and coarse-grained roles (GM vs Player). Each BC manages its own fine-grained, resource-level access rules** using the identity and role provided by IAM and Campaigns.
+The central rule for authorization: **Campaigns manages membership and coarse-grained roles (Game Master vs Player). Each BC manages its own fine-grained, resource-level access rules** using the identity and role provided by IAM and Campaigns.
 
 ---
 
@@ -30,23 +30,23 @@ Answers one question: *who are you, and are you authenticated?*
 The top-level organizing concept of the entire platform. Everything else is scoped to a campaign.
 
 - Campaign creation, naming, settings, archival
-- Participant management: invite by email, accept/reject invitations
-- Coarse-grained roles: **Game Master** (owner, full control) and **Player** (invited participant, scoped access)
-- A user can be GM of one campaign and Player in another — roles are campaign-scoped
+- Member management: invite by email, accept/reject invitations
+- Coarse-grained roles: **Game Master** (owner, full control) and **Player** (Member with scoped access)
+- A User can be Game Master of one campaign and Player in another — roles are campaign-scoped
 
 ---
 
 ### 3. Wiki
 
-World-building knowledge base. The primary creative tool for GMs.
+World-building knowledge base. The primary creative tool for Game Masters.
 
 **Features:**
 - Rich text documents (headings, tables, embeds, inline images)
 - Folder hierarchy within a campaign
 - Read mode (clean rendered view)
-- **Resource-level sharing**: share specific folders or documents with specific players (Viewer or Contributor), overriding campaign defaults
+- **Resource-level sharing**: share specific folders or documents with specific Players (Viewer or Contributor), overriding campaign defaults
 - In-document image generation via AI (the Assistant BC handles the AI call; the result becomes an Asset embedded here)
-- "Show to Players" handout button — pushes a document into the live Session for players to view
+- "Show to Players" handout button — pushes a document into the live Session for Players to view
 
 ---
 
@@ -72,7 +72,7 @@ Manages the instantiation of game rules into playable characters and monster sta
 - **Level-up workflow** — guided flow applying choices from Compendium (ASI, new class features, spells, etc.); accessible from the Characters page AND from within the character sheet modal during a live session
 - Tracks runtime character state: current HP, used spell slots, active conditions
 - Exposes a public interface so Session can read/update state during live play
-- A character belongs to a campaign and optionally to a player (owner)
+- A character belongs to a campaign and optionally to a Player (owner)
 
 ---
 
@@ -96,8 +96,8 @@ Design-time map authoring. Produces map definitions that Sessions reference at r
 - Create maps from scratch or from an imported background image (via Assets)
 - **Layers:**
   - **Map layer** — terrain, objects, background elements
-  - **Tokens layer** — player/monster/NPC tokens with optional Character link
-  - **GM layer** — markers and notes invisible to players
+  - **Tokens layer** — Player/monster/NPC tokens with optional Character link
+  - **Game Master layer** — markers and notes invisible to Players
 - Token placement and association with Characters/Monsters
 - **Drawing and measuring tools** available in edit mode (same tools as in Session, but non-real-time)
 - A map is a *template/definition* — live state (positions, fog of war, drawings, measurements) is owned by Session
@@ -109,17 +109,17 @@ Design-time map authoring. Produces map definitions that Sessions reference at r
 Real-time game orchestration. The most infrastructure-intensive BC (WebSocket-heavy, event-driven).
 
 **Features:**
-- Start a session from a campaign map; share live view with invited players
-- Real-time token movement (GM and players with permission, via WebSocket)
-- **Fog of war** — GM controls player visibility on the map
-- **Drawing tools** over the map — GM and players can draw; drawings are broadcast in real-time and visible to all participants
-- **Measuring tools** — rulers and directional arrows for distance measurement; both GM and players can use them during edit mode or in a live session; measurements are visible to all participants in real-time
-- **GM map editing during session** — dynamic layer editing without stopping play
+- Start a session from a campaign map; share live view with invited Players
+- Real-time token movement (Game Master and Players with permission, via WebSocket)
+- **Fog of war** — Game Master controls Player visibility on the map
+- **Drawing tools** over the map — Game Master and Players can draw; drawings are broadcast in real-time and visible to all Members
+- **Measuring tools** — rulers and directional arrows for distance measurement; both Game Master and Players can use them during edit mode or in a live session; measurements are visible to all Members in real-time
+- **Game Master map editing during session** — dynamic layer editing without stopping play
 - **Combat system:**
   - Initiative tracker
   - Turn management (HP changes, conditions, actions)
   - Automated rolls sourced from character sheet stats
-- **Handouts** — GM pushes Wiki pages to players as in-session modals; detachable to separate browser window
+- **Handouts** — Game Master pushes Wiki pages to Players as in-session modals; detachable to separate browser window
 - **Character/Monster sheet modals** — viewable in-session, detachable
 - Reads map definition from Maps BC; owns all live runtime state itself
 
@@ -146,7 +146,7 @@ Context-aware AI companion available across the entire platform.
 | Concern | Responsibility |
 |---|---|
 | **Authentication** | IAM (JWT middleware consumed by all BCs) |
-| **Coarse authorization** | Campaigns (GM vs Player role, resolved per campaign) |
+| **Coarse authorization** | Campaigns (Game Master vs Player role, resolved per campaign) |
 | **Fine-grained authorization** | Each BC (e.g., Wiki enforces per-folder ACL, Session enforces token ownership) |
 | **Real-Time** | Session BC owns WebSocket infrastructure; other BCs are request/response |
 | **File Storage** | Assets BC owns S3-compatible object storage interface |
