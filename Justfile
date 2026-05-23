@@ -43,5 +43,11 @@ test-bot-unit:
 test-recorder:
   cd app/discord/escriba && npm test
 
+test-transcriber:
+  cd app/transcriber && uv run pytest tests/unit tests/integration/test_transcriber.py -v
+
+test-transcriber-docker:
+  cd app/transcriber && uv run pytest tests/integration/test_transcriber_docker.py -v
+
 build-recorder:
   cd app/discord/escriba && npm run build

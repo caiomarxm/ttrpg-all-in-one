@@ -77,12 +77,27 @@ services:
       timeout: 5s
       retries: 30
 
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   escriba:
     build:
       context: ./app/discord/escriba
       dockerfile: Dockerfile
     env_file: ./app/discord/escriba/.env
     restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "${ESCRIBA_PORT:-3000}:3000"
     volumes:
@@ -90,6 +105,23 @@ services:
     environment:
       PORT: 3000
       RECORDINGS_DIR: /data/recordings
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+
+  transcriber:
+    build:
+      context: ./app/transcriber
+      dockerfile: Dockerfile
+    env_file: ./app/transcriber/.env
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./data/recordings:/data/recordings
+    environment:
+      TRANSCRIBER_RECORDINGS_DIR: /data/recordings
+      TRANSCRIBER_RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      TRANSCRIBER_WHISPER_MODEL: small
 
   cronista:
     build:

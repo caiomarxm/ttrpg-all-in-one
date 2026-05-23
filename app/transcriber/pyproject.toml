@@ -1,0 +1,30 @@
+[project]
+name = "transcriber"
+version = "0.1.0"
+description = "Celery worker — faster-whisper PT-BR transcription for O Escriba"
+requires-python = ">=3.12"
+dependencies = [
+    "celery>=5.4.0",
+    "faster-whisper>=1.1.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.15.13",
+]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+markers = [
+    "docker: runs faster-whisper inside the transcriber Docker image",
+    "slow: downloads/runs real Whisper model locally",
+]
