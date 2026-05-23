@@ -79,9 +79,9 @@ services:
 
   escriba:
     build:
-      context: ./services/recorder
+      context: ./app/discord/escriba
       dockerfile: Dockerfile
-    env_file: ./services/recorder/.env
+    env_file: ./app/discord/escriba/.env
     restart: unless-stopped
     ports:
       - "${ESCRIBA_PORT:-3000}:3000"
@@ -91,14 +91,14 @@ services:
       PORT: 3000
       RECORDINGS_DIR: /data/recordings
 
-  discord-bot:
+  cronista:
     build:
-      context: ./services/discord_bot
+      context: ./app/discord/cronista
       dockerfile: Dockerfile
-    env_file: ./services/discord_bot/.env
+    env_file: ./app/discord/cronista/.env
     restart: unless-stopped
     volumes:
-      - ./services/discord_bot:/workspace/app
+      - ./app/discord/cronista:/workspace/app
       - ./data/recordings:/data/recordings
     command: >
       python -m watchfiles

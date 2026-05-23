@@ -41,14 +41,14 @@ User → /stop  (O Cronista, Python)
 
 ---
 
-## New Component: `services/recorder/`
+## New Component: `app/discord/escriba/`
 
 Node.js/TypeScript service. Single responsibility: join a voice channel, capture per-speaker Opus audio, decode to PCM, write WAV files, dispatch the transcription task.
 
 ### Directory structure
 
 ```
-services/recorder/
+app/discord/escriba/
 ├── src/
 │   ├── index.ts        # Entry: Discord bot + Fastify server startup
 │   ├── config.ts       # RECORDER_TOKEN, RECORDINGS_DIR, PORT, RABBITMQ_URL
@@ -104,12 +104,12 @@ File path: `/data/recordings/{sessionId}/{userId}_{username}.wav`
 
 ---
 
-## Transcription Service: `services/transcription/`
+## Transcriber: `app/transcriber/`
 
 Python/Celery worker. Single responsibility: consume `transcribe_session` tasks, run faster-whisper, write `transcript.txt`.
 
 ```
-services/transcription/
+app/transcriber/
 ├── worker.py           # Celery app + transcribe_session task
 ├── config.py           # RABBITMQ_URL, RECORDINGS_DIR, WHISPER_MODEL
 ├── pyproject.toml
@@ -129,14 +129,14 @@ Payload: `{ sessionId: str }`
 
 ## O Cronista Changes
 
-### `services/discord_bot/config.py` — add fields
+### `app/discord/cronista/config.py` — add fields
 
 ```python
 RECORDER_URL: str = "http://escriba:3000"
 SESSION_ID_PREFIX: str = "session"
 ```
 
-### `services/discord_bot/entrypoints/cogs/voice.py` — replace recording calls with HTTP
+### `app/discord/cronista/entrypoints/cogs/voice.py` — replace recording calls with HTTP
 
 Cronista generates the session ID at `/join` and calls O Escriba. At `/stop` it fires the stop call and replies immediately in Portuguese without waiting for Recordings or Transcript.
 
@@ -156,7 +156,7 @@ await ctx.followup.send("Sessão encerrada, gerando transcrição...")
 self._session_id = None
 ```
 
-### `services/discord_bot/pyproject.toml` — add httpx
+### `app/discord/cronista/pyproject.toml` — add httpx
 
 ```
 uv add httpx
@@ -164,14 +164,14 @@ uv add httpx
 
 ### Remove from Cronista
 
-- `services/discord_bot/core/recording/sink.py`
-- `services/discord_bot/core/recording/session.py`
-- `services/discord_bot/tests/unit/test_sink.py`
-- `services/discord_bot/tests/unit/test_session.py`
+- `app/discord/cronista/core/recording/sink.py`
+- `app/discord/cronista/core/recording/session.py`
+- `app/discord/cronista/tests/unit/test_sink.py`
+- `app/discord/cronista/tests/unit/test_session.py`
 
 ### Keep in Cronista
 
-- `services/discord_bot/core/recording/models.py` — `VoiceSession`, `SpeakerTrack` (domain models)
+- `app/discord/cronista/core/recording/models.py` — `VoiceSession`, `SpeakerTrack` (domain models)
 
 ---
 
@@ -187,20 +187,20 @@ services:
 
   escriba:
     build:
-      context: ./services/recorder
+      context: ./app/discord/escriba
       dockerfile: Dockerfile
-    env_file: ./services/recorder/.env
+    env_file: ./app/discord/escriba/.env
     restart: unless-stopped
     volumes:
       - ./data/recordings:/data/recordings
     environment:
       RABBITMQ_URL: amqp://rabbitmq:5672
 
-  transcription:
+  transcriber:
     build:
-      context: ./services/transcription
+      context: ./app/transcriber
       dockerfile: Dockerfile
-    env_file: ./services/transcription/.env
+    env_file: ./app/transcriber/.env
     restart: unless-stopped
     volumes:
       - ./data/recordings:/data/recordings
@@ -209,7 +209,7 @@ services:
     depends_on:
       - rabbitmq
 
-  discord-bot:
+  cronista:
     environment:
       RECORDER_URL: http://escriba:3000
     volumes:
@@ -221,7 +221,7 @@ services:
 ## Manual Prerequisite (before Slice B)
 
 1. Create a second Discord application at discord.com/developers
-2. Create a bot user, copy the token → `RECORDER_TOKEN` in `services/recorder/.env`
+2. Create a bot user, copy the token → `RECORDER_TOKEN` in `app/discord/escriba/.env`
 3. Invite O Escriba to the server with `CONNECT` + `USE_VOICE_ACTIVITY` permissions (no message permissions needed)
 
 ---
@@ -248,7 +248,7 @@ services:
 - **Done when:** WAV files appear in `./data/recordings/{sessionId}/` after stop; task visible in RabbitMQ management UI
 
 ### Slice D — Transcription Service
-- New `services/transcription/` Python/Celery worker
+- New `app/transcriber/` Python/Celery worker
 - Consumes `transcribe_session`, runs faster-whisper (PT-BR), writes `transcript.txt`
 - **Done when:** `transcript.txt` appears in the session folder after stop
 
@@ -265,25 +265,25 @@ services:
 
 | Action | Path |
 |--------|------|
-| Create | `services/recorder/` (entire new service — O Escriba) |
-| Create | `services/recorder/.env.example` |
-| Create | `services/transcription/` (entire new service) |
-| Create | `services/transcription/.env.example` |
+| Create | `app/discord/escriba/` (entire new service — O Escriba) |
+| Create | `app/discord/escriba/.env.example` |
+| Create | `app/transcriber/` (entire new service) |
+| Create | `app/transcriber/.env.example` |
 | Modify | `docker-compose.yml` |
-| Modify | `services/discord_bot/config.py` |
-| Modify | `services/discord_bot/entrypoints/cogs/voice.py` |
-| Modify | `services/discord_bot/pyproject.toml` |
-| Modify | `services/discord_bot/tests/unit/test_voice_cog.py` |
-| Delete | `services/discord_bot/core/recording/sink.py` |
-| Delete | `services/discord_bot/core/recording/session.py` |
-| Delete | `services/discord_bot/tests/unit/test_sink.py` |
-| Delete | `services/discord_bot/tests/unit/test_session.py` |
+| Modify | `app/discord/cronista/config.py` |
+| Modify | `app/discord/cronista/entrypoints/cogs/voice.py` |
+| Modify | `app/discord/cronista/pyproject.toml` |
+| Modify | `app/discord/cronista/tests/unit/test_voice_cog.py` |
+| Delete | `app/discord/cronista/core/recording/sink.py` |
+| Delete | `app/discord/cronista/core/recording/session.py` |
+| Delete | `app/discord/cronista/tests/unit/test_sink.py` |
+| Delete | `app/discord/cronista/tests/unit/test_session.py` |
 
 ---
 
 ## Verification
 
-1. `docker compose up --build` — `escriba`, `transcription`, `rabbitmq`, and `discord-bot` all start cleanly
+1. `docker compose up --build` — `escriba`, `transcriber`, `rabbitmq`, and `cronista` all start cleanly
 2. Invite both bots to the test server
 3. Join a voice channel, run `/join` — O Escriba joins the same channel
 4. Speak for a few seconds, run `/stop` — O Cronista replies "Sessão encerrada, gerando transcrição..." immediately; O Escriba leaves

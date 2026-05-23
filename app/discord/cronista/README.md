@@ -1,6 +1,6 @@
-# Cronista Bot
+# O Cronista (Discord bot)
 
-Discord interface for O Cronista — records RPG sessions and triggers transcription.
+Discord interface for O Cronista — orchestrates Sessions, slash commands, and calls O Escriba for voice capture.
 
 ## Commands
 
@@ -14,9 +14,9 @@ Discord interface for O Cronista — records RPG sessions and triggers transcrip
 ## Setup
 
 ```bash
-cp app/cronista/bot/.env.example app/cronista/bot/.env
+cp app/discord/cronista/.env.example app/discord/cronista/.env
 # fill in BOT_TOKEN and SERVER_ID
-just venv
+cd app/discord/cronista && uv sync
 just test-bot
 ```
 
@@ -32,10 +32,11 @@ just test-bot
 
 ```bash
 # Local
-PYTHONPATH=app/cronista/bot uv run python app/cronista/bot/entrypoints/bot.py
+cd app/discord/cronista
+uv run python entrypoints/bot.py
 
-# Docker
-just run-bot
+# Docker (full stack)
+just run
 ```
 
 ## Tests

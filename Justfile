@@ -29,19 +29,19 @@ test-frontend:
   cd app/web && npm test
 
 lint-bot:
-  cd services/discord_bot && uv run ruff check .
+  cd app/discord/cronista && uv run ruff check .
 
 format-bot:
-  cd services/discord_bot && uv run ruff format .
+  cd app/discord/cronista && uv run ruff format .
 
 test-bot:
-  cd services/discord_bot && uv run pytest tests/ -v
+  cd app/discord/cronista && uv run pytest tests/ -v
 
 test-bot-unit:
-  cd services/discord_bot && uv run pytest tests/unit/ -v
+  cd app/discord/cronista && uv run pytest tests/unit/ -v
 
 test-recorder:
-  cd services/recorder && npm test
+  cd app/discord/escriba && npm test
 
 build-recorder:
-  cd services/recorder && npm run build
+  cd app/discord/escriba && npm run build

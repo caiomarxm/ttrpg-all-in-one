@@ -105,18 +105,20 @@ app/
       features/      ← mirrors BC names
       shared/
     package.json
-services/
-  discord_bot/       ← O Cronista Discord bot (pycord, separate runtime)
-    entrypoints/     ← bot.py bootstrap + cogs/
-    core/            ← business logic (recording, transcription)
-    tests/
-    Dockerfile
-    pyproject.toml
+  discord/
+    cronista/        ← O Cronista Discord bot (pycord, separate runtime)
+      entrypoints/   ← bot.py bootstrap + cogs/
+      core/          ← business logic (recording, transcription)
+      tests/
+      Dockerfile
+      pyproject.toml
+    escriba/         ← O Escriba voice recorder (Node.js + dysnomia, DAVE-aware)
+  transcriber/       ← Whisper PT-BR Celery worker (planned)
 persistence/
   alembic.ini        ← Alembic bootstrap for the monorepo (provisional SQLite under var/ until Compose)
   migrations/
   var/
-docker-compose.yml   ← includes discord-bot service; `just run` starts everything
+docker-compose.yml   ← includes cronista + escriba services; `just run` starts everything
 CONTRIBUTING.md      ← run backend/frontend locally, toolchain
 docs/
   PRINCIPLES.md      ← philosophy & 10 architecture principles only
@@ -236,4 +238,4 @@ just test-bot       # all tests for Discord bot
 just lint-bot       # ruff check/format for Discord bot
 ```
 
-The Discord bot lives in `services/discord_bot/`. Its env vars (`BOT_TOKEN`, `SERVER_ID`) go in `services/discord_bot/.env` (gitignored — copy from `.env.example`).
+O Cronista lives in `app/discord/cronista/`. Env vars (`BOT_TOKEN`, `SERVER_ID`) go in `app/discord/cronista/.env` (gitignored — copy from `.env.example`). O Escriba: `app/discord/escriba/`. Transcriber (planned): `app/transcriber/`.
