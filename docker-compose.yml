@@ -77,6 +77,20 @@ services:
       timeout: 5s
       retries: 30
 
+  escriba:
+    build:
+      context: ./services/recorder
+      dockerfile: Dockerfile
+    env_file: ./services/recorder/.env
+    restart: unless-stopped
+    ports:
+      - "${ESCRIBA_PORT:-3000}:3000"
+    volumes:
+      - ./data/recordings:/data/recordings
+    environment:
+      PORT: 3000
+      RECORDINGS_DIR: /data/recordings
+
   discord-bot:
     build:
       context: ./services/discord_bot

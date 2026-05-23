@@ -39,3 +39,9 @@ test-bot:
 
 test-bot-unit:
   cd services/discord_bot && uv run pytest tests/unit/ -v
+
+test-recorder:
+  cd services/recorder && npm test
+
+build-recorder:
+  cd services/recorder && npm run build
