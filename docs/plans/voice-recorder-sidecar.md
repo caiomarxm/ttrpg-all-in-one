@@ -1,37 +1,49 @@
-# Plan: Voice Recorder Sidecar (Node.js + dysnomia)
+# Plan: O Escriba (Node.js + dysnomia)
 
 ## Context
 
 Discord enforced DAVE E2EE on all voice channels on March 2, 2026. py-cord's `start_recording()` cannot decrypt DAVE-encrypted audio — the library hard-codes a `RuntimeWarning` and the packet router crashes on every incoming packet. No fix is imminent (tracked at py-cord #3139).
 
-Craig (craig.chat) solves this using their `dysnomia` fork of Eris + `@snazzah/davey`, which handles DAVE decryption transparently inside the library. We extract that pattern into a minimal standalone Node.js sidecar whose only job is voice capture. Cronista (Python/py-cord) keeps all slash commands and session orchestration.
+Craig (craig.chat) solves this using their `dysnomia` fork of Eris + `@snazzah/davey`, which handles DAVE decryption transparently. We extract that pattern into **O Escriba**: a minimal Node.js bot whose only job is joining a voice channel and capturing per-speaker Recordings. O Cronista keeps all slash commands and Session orchestration.
 
-**Key constraint:** one bot token = one Discord gateway connection. The sidecar needs its own Discord application and bot token. Cronista controls it via HTTP over the Docker internal network.
+**Key constraint:** one bot token = one Discord gateway connection. O Escriba needs its own Discord application and bot token. O Cronista controls it via HTTP over the Docker internal network.
 
 ---
 
 ## Target Architecture
 
 ```
-User → /join  (Cronista, Python)
-  → POST http://recorder:3000/sessions  { guildId, channelId, usernames }
-  → Recorder bot (Node.js + dysnomia + davey) joins channel, starts capture
-  → Cronista replies "Recording started"
+User → /join  (O Cronista, Python)
+  → generates sessionId
+  → POST http://escriba:3000/sessions  { sessionId, guildId, channelId }
+  → O Escriba joins channel, starts capturing Recordings
+  → Cronista replies "Entrei em #canal! Gravando..."
 
-User → /stop  (Cronista, Python)
-  → DELETE http://recorder:3000/sessions/{id}
-  → Recorder decodes Opus → PCM, writes WAV per speaker to shared volume
-  → Returns [{ userId, username, wavPath }]
-  → Cronista maps to SpeakerTrack[], runs Whisper, replies with summary
+User → /stop  (O Cronista, Python)
+  → POST http://escriba:3000/sessions/{sessionId}/stop
+  → O Escriba acknowledges immediately ({ ok: true })
+  → Cronista replies "Sessão encerrada, gerando transcrição..."
+  → O Escriba finishes writing WAV files to shared volume
+  → O Escriba dispatches Celery task: transcribe_session(sessionId)
+  → Transcription Service picks it up, runs Whisper, writes transcript.txt
 ```
 
-**Shared volume:** `./data/recordings` mounted at `/data/recordings` in both containers.
+**Cronista generates the session ID.** It owns Session lifecycle and passes the ID to O Escriba at `/join` time. This means the shared volume layout is always derivable from the session ID Cronista already holds.
+
+**O Escriba dispatches the Celery task** (not Cronista). See ADR-0003.
+
+**Shared volume layout:**
+```
+/data/recordings/{sessionId}/
+  {userId}_{username}.wav   ← one per speaker
+  transcript.txt            ← written by Transcription Service
+```
 
 ---
 
 ## New Component: `services/recorder/`
 
-Node.js/TypeScript service. Single responsibility: join a voice channel, capture per-speaker Opus audio, decode to PCM, write WAV files.
+Node.js/TypeScript service. Single responsibility: join a voice channel, capture per-speaker Opus audio, decode to PCM, write WAV files, dispatch the transcription task.
 
 ### Directory structure
 
@@ -39,7 +51,7 @@ Node.js/TypeScript service. Single responsibility: join a voice channel, capture
 services/recorder/
 ├── src/
 │   ├── index.ts        # Entry: Discord bot + Fastify server startup
-│   ├── config.ts       # RECORDER_TOKEN, SERVER_ID, RECORDINGS_DIR, PORT
+│   ├── config.ts       # RECORDER_TOKEN, RECORDINGS_DIR, PORT, RABBITMQ_URL
 │   ├── recording.ts    # Recording class: join, onData, stop → WAV
 │   └── server.ts       # Fastify HTTP API
 ├── package.json
@@ -56,7 +68,8 @@ services/recorder/
   "@snazzah/davey": "^0.1.8",
   "@discordjs/opus": "^0.10.0",
   "sodium-native": "^4.1.1",
-  "fastify": "^4"
+  "fastify": "^4",
+  "amqplib": "^0.10"
 }
 ```
 
@@ -65,8 +78,8 @@ services/recorder/
 | Method | Path | Body | Response |
 |--------|------|------|----------|
 | GET | /health | — | `{ ok: true }` |
-| POST | /sessions | `{ guildId, channelId, usernames: { [userId]: string } }` | `{ sessionId }` |
-| DELETE | /sessions/:id | — | `{ tracks: [{ userId, username, wavPath }] }` |
+| POST | /sessions | `{ sessionId, guildId, channelId }` | `{ ok: true }` |
+| POST | /sessions/:id/stop | — | `{ ok: true }` |
 
 No authentication — internal Docker network only.
 
@@ -78,47 +91,70 @@ No authentication — internal Docker network only.
    - Skip mostly-zero packets (Cloudflare voice server artifact; per Craig)
    - Create `OpusDecoder(48000, 2)` per userID on first packet
    - Decode Opus → PCM, append to per-user `Buffer[]`
-   - Record `startedAt` on first packet per user
-4. On `DELETE /sessions/:id`:
-   - Stop receiver, disconnect from channel
-   - For each user: concatenate PCM buffers, write WAV
-   - Return track list with absolute file paths
+4. On `POST /sessions/:id/stop`:
+   - Return `{ ok: true }` immediately
+   - Disconnect from channel, flush PCM → WAV per speaker
+   - Dispatch `transcribe_session` Celery task with `{ sessionId }`
 
 ### WAV output format
 
-48000 Hz, 2 channels (stereo), 16-bit signed PCM — matches the existing `CronistaAudioSink` format so Whisper integration requires no changes.
+48000 Hz, 2 channels (stereo), 16-bit signed PCM.
 
 File path: `/data/recordings/{sessionId}/{userId}_{username}.wav`
 
 ---
 
-## Cronista Changes
+## Transcription Service: `services/transcription/`
 
-### `services/discord_bot/config.py` — add one field
+Python/Celery worker. Single responsibility: consume `transcribe_session` tasks, run faster-whisper, write `transcript.txt`.
+
+```
+services/transcription/
+├── worker.py           # Celery app + transcribe_session task
+├── config.py           # RABBITMQ_URL, RECORDINGS_DIR, WHISPER_MODEL
+├── pyproject.toml
+└── Dockerfile
+```
+
+### Task: `transcribe_session`
+
+Payload: `{ sessionId: str }`
+
+1. Glob `/data/recordings/{sessionId}/*.wav`
+2. For each WAV: run `WhisperModel(config.WHISPER_MODEL, language='pt')`, collect `Segment(speaker, start, end, text)`
+3. Merge all segments, sort by `start`
+4. Write to `/data/recordings/{sessionId}/transcript.txt`
+
+---
+
+## O Cronista Changes
+
+### `services/discord_bot/config.py` — add fields
 
 ```python
-RECORDER_URL: str = "http://recorder:3000"
+RECORDER_URL: str = "http://escriba:3000"
+SESSION_ID_PREFIX: str = "session"
 ```
 
 ### `services/discord_bot/entrypoints/cogs/voice.py` — replace recording calls with HTTP
 
-`_attach_recording` and `_finish_recording` are replaced by `httpx` async calls:
+Cronista generates the session ID at `/join` and calls O Escriba. At `/stop` it fires the stop call and replies immediately in Portuguese without waiting for Recordings or Transcript.
 
 ```python
 # /join
-resp = await client.post(f"{config.RECORDER_URL}/sessions", json={
+import uuid
+self._session_id = f"{config.SESSION_ID_PREFIX}-{uuid.uuid4()}"
+await client.post(f"{config.RECORDER_URL}/sessions", json={
+    "sessionId": self._session_id,
     "guildId": ctx.guild_id,
     "channelId": channel.id,
-    "usernames": {m.id: m.name for m in channel.members},
 })
-self._session_id = resp.json()["sessionId"]
 
 # /stop
-resp = await client.delete(f"{config.RECORDER_URL}/sessions/{self._session_id}")
-tracks = [SpeakerTrack(**t) for t in resp.json()["tracks"]]
+await client.post(f"{config.RECORDER_URL}/sessions/{self._session_id}/stop")
+await ctx.followup.send("Sessão encerrada, gerando transcrição...")
+self._session_id = None
 ```
-
-Cronista no longer connects to voice at all — no `vc.start_recording()`, no `vc.stop_recording()`.
 
 ### `services/discord_bot/pyproject.toml` — add httpx
 
@@ -128,15 +164,14 @@ uv add httpx
 
 ### Remove from Cronista
 
-- `services/discord_bot/core/recording/sink.py` — `CronistaAudioSink` (py-cord sink, replaced by sidecar)
-- `services/discord_bot/core/recording/session.py` — `RecordingSession` (replaced by sidecar)
+- `services/discord_bot/core/recording/sink.py`
+- `services/discord_bot/core/recording/session.py`
 - `services/discord_bot/tests/unit/test_sink.py`
 - `services/discord_bot/tests/unit/test_session.py`
 
 ### Keep in Cronista
 
-- `services/discord_bot/core/recording/models.py` — `VoiceSession`, `SpeakerTrack` (domain models, still used)
-- All transcription code (unblocked by this work)
+- `services/discord_bot/core/recording/models.py` — `VoiceSession`, `SpeakerTrack` (domain models)
 
 ---
 
@@ -144,7 +179,13 @@ uv add httpx
 
 ```yaml
 services:
-  recorder:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+
+  escriba:
     build:
       context: ./services/recorder
       dockerfile: Dockerfile
@@ -152,11 +193,27 @@ services:
     restart: unless-stopped
     volumes:
       - ./data/recordings:/data/recordings
+    environment:
+      RABBITMQ_URL: amqp://rabbitmq:5672
+
+  transcription:
+    build:
+      context: ./services/transcription
+      dockerfile: Dockerfile
+    env_file: ./services/transcription/.env
+    restart: unless-stopped
+    volumes:
+      - ./data/recordings:/data/recordings
+    environment:
+      RABBITMQ_URL: amqp://rabbitmq:5672
+    depends_on:
+      - rabbitmq
 
   discord-bot:
     environment:
-      RECORDER_URL: http://recorder:3000
-    # existing volumes already include data/recordings
+      RECORDER_URL: http://escriba:3000
+    volumes:
+      - ./data/recordings:/data/recordings
 ```
 
 ---
@@ -165,36 +222,42 @@ services:
 
 1. Create a second Discord application at discord.com/developers
 2. Create a bot user, copy the token → `RECORDER_TOKEN` in `services/recorder/.env`
-3. Invite the recorder bot to the server with `CONNECT` + `USE_VOICE_ACTIVITY` permissions (no message permissions needed)
+3. Invite O Escriba to the server with `CONNECT` + `USE_VOICE_ACTIVITY` permissions (no message permissions needed)
 
 ---
 
 ## Vertical Slices
 
-### Slice A — Sidecar scaffold
-- Node.js/TS project, Fastify, `/health` + mock `/sessions` endpoints (no Discord yet)
-- Dockerfile + docker-compose `recorder` service + shared volume
+### Slice A — O Escriba scaffold
+- Node.js/TS project, Fastify, `/health` + stub `/sessions` and `/sessions/:id/stop` endpoints (no Discord yet)
+- Dockerfile + docker-compose `escriba` service + shared volume
 - Tests: HTTP contract tests against the running server
-- **Done when:** `docker compose up` starts a `recorder` service and `/health` returns 200
+- **Done when:** `docker compose up` starts an `escriba` service and `/health` returns 200
 
-### Slice B — Discord voice connection *(needs recorder bot token)*
+### Slice B — Discord voice connection *(needs O Escriba bot token)*
 - dysnomia bot connects to Discord gateway
 - `POST /sessions` triggers `channel.join({ opusOnly: true })` + `connection.receive('opus')`
-- `DELETE /sessions/:id` triggers disconnect
+- `POST /sessions/:id/stop` triggers disconnect
 - Log packet arrivals (no audio writing yet)
-- **Done when:** recorder bot visibly joins/leaves the voice channel on command
+- **Done when:** O Escriba visibly joins/leaves the voice channel on command
 
-### Slice C — Audio capture → WAV
+### Slice C — Audio capture → WAV + RabbitMQ task dispatch
 - `OpusDecoder` per speaker, accumulate PCM, write WAV on stop
-- `DELETE /sessions/:id` returns `{ tracks: [...] }`
-- **Done when:** WAV files appear in `./data/recordings/` after `/stop`, one per speaker
+- After WAVs written, dispatch `transcribe_session` Celery task via RabbitMQ
+- RabbitMQ added to docker-compose
+- **Done when:** WAV files appear in `./data/recordings/{sessionId}/` after stop; task visible in RabbitMQ management UI
 
-### Slice D — Cronista integration
+### Slice D — Transcription Service
+- New `services/transcription/` Python/Celery worker
+- Consumes `transcribe_session`, runs faster-whisper (PT-BR), writes `transcript.txt`
+- **Done when:** `transcript.txt` appears in the session folder after stop
+
+### Slice E — Cronista integration
 - Add `httpx` dependency
-- Rewrite `VoiceCog` to call recorder HTTP API instead of py-cord recording
+- Rewrite `VoiceCog` to call O Escriba HTTP API, generate session ID, reply in Portuguese
 - Remove `sink.py`, `session.py`, and their tests
 - Update `test_voice_cog.py` to mock HTTP calls
-- **Done when:** `/join` + `/stop` end-to-end works and `just test-bot-unit` passes
+- **Done when:** `/join` + `/stop` end-to-end works, `transcript.txt` produced, `just test-bot-unit` passes
 
 ---
 
@@ -202,8 +265,10 @@ services:
 
 | Action | Path |
 |--------|------|
-| Create | `services/recorder/` (entire new service) |
+| Create | `services/recorder/` (entire new service — O Escriba) |
 | Create | `services/recorder/.env.example` |
+| Create | `services/transcription/` (entire new service) |
+| Create | `services/transcription/.env.example` |
 | Modify | `docker-compose.yml` |
 | Modify | `services/discord_bot/config.py` |
 | Modify | `services/discord_bot/entrypoints/cogs/voice.py` |
@@ -218,9 +283,9 @@ services:
 
 ## Verification
 
-1. `docker compose up --build` — both `discord-bot` and `recorder` start cleanly, no errors
+1. `docker compose up --build` — `escriba`, `transcription`, `rabbitmq`, and `discord-bot` all start cleanly
 2. Invite both bots to the test server
-3. Join a voice channel, run `/join` — recorder bot joins the same channel
-4. Speak for a few seconds, run `/stop` — recorder bot leaves
-5. `ls ./data/recordings/` — WAV files present, one per speaker
+3. Join a voice channel, run `/join` — O Escriba joins the same channel
+4. Speak for a few seconds, run `/stop` — O Cronista replies "Sessão encerrada, gerando transcrição..." immediately; O Escriba leaves
+5. `ls ./data/recordings/{sessionId}/` — WAV files + `transcript.txt` present
 6. `just test-bot-unit` — all Python tests pass

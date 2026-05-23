@@ -1,12 +1,20 @@
 # O Cronista — Bot
 
-O Cronista is the Discord-facing service: it manages Session lifecycle via slash commands, records voice audio, and generates Artifacts (Crônica + Session Notes) from Transcripts.
+O Cronista is the Discord-facing bounded context. It encompasses four deployment units: the **Cronista bot** (Session lifecycle and slash commands), **O Escriba** (voice recording), the **Transcription Service** (audio-to-text), and the **Cronista Worker** (Artifact generation).
 
 ## Language
+
+**O Escriba**:
+The second Discord bot whose only responsibility is joining a voice channel and capturing Recordings. It has no slash commands and no domain logic.
+_Avoid_: Recorder, sidecar, recorder bot
 
 **Session**:
 A single RPG gathering. Starts when the Game Master runs `/join`. Ends with `/stop` or is abandoned with `/discard`. Tolerates multiple voice channel reconnections — recording accumulates across them.
 _Avoid_: Meeting, recording, game
+
+**Recording**:
+The raw per-speaker audio captured during a Session — one audio file per participant. The input to transcription.
+_Avoid_: Track, audio file, wav, capture
 
 **Transcript**:
 The raw text output of transcribing a Session's audio. The source material for Artifact generation.
@@ -30,7 +38,8 @@ _Avoid_: GM, Master, DM, Dungeon Master
 
 ## Relationships
 
-- A **Session** produces exactly one **Transcript** (once ended)
+- A **Session** produces one or more **Recordings** (one per speaker) and exactly one **Transcript** (once ended)
+- A **Transcript** is produced from a Session's **Recordings**
 - A **Transcript** is the source for exactly two **Artifacts**: one **Crônica** and one set of **Session Notes**
 - **Session Notes** are visible only to the **Game Master**; a **Crônica** is visible to all participants
 
