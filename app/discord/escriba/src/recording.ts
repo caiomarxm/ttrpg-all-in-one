@@ -213,9 +213,10 @@ export class Recording {
 
   private async appendPacket(userId: string, data: Buffer): Promise<void> {
     let speaker = this.speakers.get(userId);
+    const isNewSpeaker = !speaker;
     if (!speaker) {
       speaker = {
-        username: await this.resolveUsername(userId),
+        username: sanitizeUsername(userId),
         pcmChunks: [],
       };
       this.speakers.set(userId, speaker);
@@ -225,6 +226,15 @@ export class Recording {
     if (!decoder) {
       decoder = new OpusEncoder(48_000, 2);
       this.decoders.set(userId, decoder);
+    }
+
+    if (isNewSpeaker) {
+      void this.resolveUsername(userId).then((username) => {
+        const existing = this.speakers.get(userId);
+        if (existing) {
+          existing.username = username;
+        }
+      });
     }
 
     try {

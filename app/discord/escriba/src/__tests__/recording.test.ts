@@ -2,12 +2,15 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import opus from "@discordjs/opus";
 import type { TaskPublisher } from "../celery-publisher.js";
 import {
   Recording,
   isMostlyZeroPacket,
   type DiscordClientLike,
 } from "../recording.js";
+
+const { OpusEncoder } = opus;
 
 const decode = vi.fn((packet: Buffer) => Buffer.alloc(1920, packet[0] ?? 0));
 
@@ -250,6 +253,58 @@ describe("Recording", () => {
     );
     expect(files.some((name) => name.startsWith("ignored-user_"))).toBe(false);
     expect(decode).not.toHaveBeenCalled();
+  });
+
+  it("concurrent packets for the same user share one speaker state", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
+    const { client, receiver, channel } = createMockVoiceSetup();
+
+    let unblockFetch!: () => void;
+    const fetchBlocked = new Promise<void>((resolve) => {
+      unblockFetch = resolve;
+    });
+
+    const guildWithSlowFetch = {
+      id: "guild-1",
+      fetchMembers: vi.fn().mockImplementation(async () => {
+        await fetchBlocked;
+        return [{ username: "Alice" }];
+      }),
+    };
+    Object.assign(channel, {
+      guild: guildWithSlowFetch,
+      voiceMembers: { get: vi.fn().mockReturnValue(undefined) },
+    });
+
+    const recording = new Recording(
+      client,
+      "session-1",
+      tempDir,
+      taskPublisher,
+    );
+
+    await recording.join("guild-1", "channel-1");
+
+    const onData = receiver.on.mock.calls[0][1] as (
+      data: Buffer,
+      userId: string,
+    ) => void;
+
+    for (let i = 1; i <= 10; i += 1) {
+      onData(Buffer.from([i]), "user-1");
+    }
+
+    unblockFetch();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await recording.stop();
+    await recording.finalize();
+
+    expect(vi.mocked(OpusEncoder)).toHaveBeenCalledTimes(1);
+    expect(decode).toHaveBeenCalledTimes(10);
+
+    const files = await readdir(path.join(tempDir, "session-1"));
+    expect(files).toEqual(["user-1_Alice.wav"]);
   });
 
   it("stop without join is a no-op", async () => {
