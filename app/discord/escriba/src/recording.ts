@@ -222,7 +222,7 @@ export class Recording {
         `[recording] finalize failed sessionId=${this.sessionId}`,
         err,
       );
-      throw err;
+      return;
     }
 
     if (!this.taskPublisher) {
@@ -367,15 +367,16 @@ export class Recording {
   }
 
   private async finalizeWavs(): Promise<string[]> {
-    const wavPaths: string[] = [];
     const speakers = [...this.speakers.entries()];
-    for (const [userId, speaker] of speakers) {
-      speaker.stream.end();
-      await finished(speaker.stream);
-      await this.ensureSpeakerFilePath(userId, speaker);
-      await patchWavHeader(speaker.filePath);
-      wavPaths.push(speaker.filePath);
-    }
+    const wavPaths = await Promise.all(
+      speakers.map(async ([userId, speaker]) => {
+        speaker.stream.end();
+        await finished(speaker.stream);
+        await this.ensureSpeakerFilePath(userId, speaker);
+        await patchWavHeader(speaker.filePath);
+        return speaker.filePath;
+      }),
+    );
 
     this.speakers.clear();
     this.decoders.clear();

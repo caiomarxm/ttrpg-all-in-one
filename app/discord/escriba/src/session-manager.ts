@@ -61,12 +61,7 @@ export class SessionManager {
     await recording.stop();
     this.sessions.delete(sessionId);
 
-    const finalizePromise = recording.finalize().catch((err: unknown) => {
-      console.error(
-        `[session-manager] background finalize failed sessionId=${sessionId}`,
-        err,
-      );
-    });
+    const finalizePromise = recording.finalize();
     this.pendingFinalizations.set(sessionId, finalizePromise);
     void finalizePromise.finally(() => {
       this.pendingFinalizations.delete(sessionId);
