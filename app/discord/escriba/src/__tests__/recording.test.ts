@@ -12,7 +12,9 @@ import {
 const decode = vi.fn((packet: Buffer) => Buffer.alloc(1920, packet[0] ?? 0));
 
 vi.mock("@discordjs/opus", () => ({
-  OpusEncoder: vi.fn().mockImplementation(() => ({ decode })),
+  default: {
+    OpusEncoder: vi.fn().mockImplementation(() => ({ decode })),
+  },
 }));
 
 function createMockVoiceSetup() {
@@ -23,6 +25,7 @@ function createMockVoiceSetup() {
 
   const connection = {
     receive: vi.fn().mockReturnValue(receiver),
+    disconnect: vi.fn(),
   };
 
   const channel = {
@@ -32,11 +35,20 @@ function createMockVoiceSetup() {
     leave: vi.fn(),
   };
 
-  const client: DiscordClientLike = {
-    getChannel: vi.fn().mockReturnValue(channel),
+  const guild = {
+    channels: { add: vi.fn() },
   };
 
-  return { client, channel, connection, receiver };
+  const client: DiscordClientLike = {
+    getChannel: vi.fn().mockReturnValue(channel),
+    getRESTChannel: vi.fn(),
+    guilds: { get: vi.fn().mockReturnValue(guild) } as unknown as DiscordClientLike["guilds"],
+    channelGuildMap: {},
+    closeVoiceConnection: vi.fn(),
+    leaveVoiceChannel: vi.fn(),
+  };
+
+  return { client, channel, connection, receiver, guild };
 }
 
 describe("isMostlyZeroPacket", () => {
@@ -84,6 +96,29 @@ describe("Recording", () => {
     expect(recording.isJoined).toBe(true);
   });
 
+  it("fetches voice channel via REST when it is not cached", async () => {
+    const { client, channel, connection, receiver, guild } =
+      createMockVoiceSetup();
+    client.getChannel = vi.fn().mockReturnValue(undefined);
+    client.getRESTChannel = vi.fn().mockResolvedValue(channel);
+
+    const recording = new Recording(
+      client,
+      "session-1",
+      "/tmp/recordings",
+      taskPublisher,
+    );
+
+    await recording.join("guild-1", "channel-1");
+
+    expect(client.getRESTChannel).toHaveBeenCalledWith("channel-1");
+    expect(guild.channels.add).toHaveBeenCalledWith(channel, client);
+    expect(client.channelGuildMap["channel-1"]).toBe("guild-1");
+    expect(channel.join).toHaveBeenCalledWith({ opusOnly: true });
+    expect(connection.receive).toHaveBeenCalledWith("opus");
+    expect(receiver.on).toHaveBeenCalled();
+  });
+
   it("duplicate join is a no-op", async () => {
     const { client, channel } = createMockVoiceSetup();
     const recording = new Recording(
@@ -101,7 +136,7 @@ describe("Recording", () => {
 
   it("stop writes WAV files and publishes transcribe_session", async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
-    const { client, channel, receiver } = createMockVoiceSetup();
+    const { client, channel, connection, receiver } = createMockVoiceSetup();
     const recording = new Recording(
       client,
       "session-1",
@@ -121,7 +156,8 @@ describe("Recording", () => {
 
     await recording.stop();
 
-    expect(channel.leave).toHaveBeenCalledTimes(1);
+    expect(connection.disconnect).toHaveBeenCalledTimes(1);
+    expect(client.closeVoiceConnection).toHaveBeenCalledWith("guild-1");
     expect(decode).toHaveBeenCalledTimes(1);
     expect(publishTranscribeSession).toHaveBeenCalledWith("session-1");
 

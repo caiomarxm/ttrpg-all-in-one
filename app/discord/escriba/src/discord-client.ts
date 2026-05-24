@@ -1,4 +1,4 @@
-import Eris from "eris";
+import * as Eris from "eris";
 
 const GATEWAY_INTENTS = [
   "guilds",
@@ -7,6 +7,7 @@ const GATEWAY_INTENTS = [
 
 export function createDiscordClient(token: string): Eris.Client {
   return new Eris.Client(token, {
+    restMode: true,
     gateway: {
       intents: [...GATEWAY_INTENTS],
     },

@@ -17,8 +17,16 @@ build/
 persistence/var/*
 !persistence/var/.gitignore
 
+
+# Local data files under data/ (directory stub tracked — see data/.gitignore)
+data/recordings/
+
+
 # Local secrets / env overlays
+.env
+.env.*
 .env.local
+!.env.example
 
 # Beads / Dolt files (added by bd init)
 .dolt/

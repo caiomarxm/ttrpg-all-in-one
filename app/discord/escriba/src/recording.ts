@@ -1,9 +1,20 @@
-import { OpusEncoder } from "@discordjs/opus";
-import Eris from "eris";
+import opus from "@discordjs/opus";
+import * as Eris from "eris";
+
+const { OpusEncoder } = opus;
 import { speakerWavPath, writeSpeakerWav } from "./wav.js";
 import type { TaskPublisher } from "./celery-publisher.js";
 
-export type DiscordClientLike = Pick<Eris.Client, "getChannel">;
+export type DiscordClientLike = Pick<
+  Eris.Client,
+  | "getChannel"
+  | "getRESTChannel"
+  | "guilds"
+  | "closeVoiceConnection"
+  | "leaveVoiceChannel"
+> & {
+  channelGuildMap: Eris.Client["channelGuildMap"];
+};
 
 type JoinableVoiceChannel = {
   id: string;
@@ -35,6 +46,46 @@ function asJoinableVoiceChannel(
   return candidate;
 }
 
+async function resolveJoinableVoiceChannel(
+  client: DiscordClientLike,
+  guildId: string,
+  channelId: string,
+): Promise<JoinableVoiceChannel> {
+  const cached = asJoinableVoiceChannel(client.getChannel(channelId));
+  if (cached) {
+    return cached;
+  }
+
+  if (!client.guilds.get(guildId)) {
+    throw new Error(
+      `Guild not found: ${guildId}. Invite O Escriba to this Discord server.`,
+    );
+  }
+
+  const fetched = await client.getRESTChannel(channelId);
+  const channel = asJoinableVoiceChannel(fetched);
+  if (!channel) {
+    throw new Error(`Voice channel not found: ${channelId}`);
+  }
+
+  if (channel.guild.id !== guildId) {
+    throw new Error(
+      `Channel ${channelId} is not in guild ${guildId} (got ${channel.guild.id})`,
+    );
+  }
+
+  const guild = client.guilds.get(guildId);
+  if (guild) {
+    guild.channels.add(
+      fetched as Eris.AnyGuildChannel,
+      client as Eris.Client,
+    );
+    client.channelGuildMap[channelId] = guildId;
+  }
+
+  return channel;
+}
+
 export function isMostlyZeroPacket(data: Buffer): boolean {
   if (data.length === 0 || data[0] !== 0) {
     return false;
@@ -54,13 +105,20 @@ function sanitizeUsername(username: string): string {
   return username.replace(/[^\w.-]+/g, "_") || "unknown";
 }
 
+type VoiceConnectionLike = {
+  receive: (type: string) => Eris.VoiceDataStream;
+  disconnect: () => void;
+};
+
 export class Recording {
-  private connection: Eris.VoiceConnection | null = null;
+  private connection: VoiceConnectionLike | null = null;
   private receiver: Eris.VoiceDataStream | null = null;
   private channel: JoinableVoiceChannel | null = null;
+  private guildId: string | null = null;
+  private channelId: string | null = null;
   private joined = false;
   private readonly speakers = new Map<string, SpeakerState>();
-  private readonly decoders = new Map<string, OpusEncoder>();
+  private readonly decoders = new Map<string, InstanceType<typeof OpusEncoder>>();
 
   constructor(
     private readonly client: DiscordClientLike,
@@ -78,24 +136,21 @@ export class Recording {
       return;
     }
 
-    const channel = asJoinableVoiceChannel(this.client.getChannel(channelId));
-    if (!channel) {
-      throw new Error(`Voice channel not found: ${channelId}`);
-    }
-
-    if (channel.guild.id !== guildId) {
-      throw new Error(
-        `Channel ${channelId} is not in guild ${guildId} (got ${channel.guild.id})`,
-      );
-    }
+    const channel = await resolveJoinableVoiceChannel(
+      this.client,
+      guildId,
+      channelId,
+    );
 
     const connection = await channel.join({ opusOnly: true });
     const receiver = connection.receive("opus");
     receiver.on("data", this.onData);
 
     this.channel = channel;
-    this.connection = connection;
+    this.connection = connection as VoiceConnectionLike;
     this.receiver = receiver;
+    this.guildId = guildId;
+    this.channelId = channelId;
     this.joined = true;
   }
 
@@ -104,13 +159,28 @@ export class Recording {
       return;
     }
 
+    const guildId = this.guildId;
+    const channelId = this.channelId;
+    const connection = this.connection;
+
     this.receiver?.removeListener("data", this.onData);
     this.receiver = null;
+    this.joined = false;
+
+    connection?.disconnect();
     this.connection = null;
 
-    this.channel?.leave();
+    if (guildId) {
+      this.client.closeVoiceConnection(guildId);
+    } else if (channelId && this.client.channelGuildMap[channelId]) {
+      this.client.leaveVoiceChannel(channelId);
+    } else {
+      this.channel?.leave();
+    }
+
     this.channel = null;
-    this.joined = false;
+    this.guildId = null;
+    this.channelId = null;
 
     await this.flushWavs();
     await this.taskPublisher?.publishTranscribeSession(this.sessionId);

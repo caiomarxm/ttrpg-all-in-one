@@ -129,9 +129,13 @@ services:
       dockerfile: Dockerfile
     env_file: ./app/discord/cronista/.env
     restart: unless-stopped
+    depends_on:
+      - escriba
     volumes:
       - ./app/discord/cronista:/workspace/app
       - ./data/recordings:/data/recordings
+    environment:
+      RECORDER_URL: http://escriba:3000
     command: >
       python -m watchfiles
       "python /workspace/app/entrypoints/bot.py"

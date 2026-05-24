@@ -12,3 +12,5 @@ class Config(BaseSettings):
     BOT_TOKEN: SecretStr
     SERVER_ID: int
     RECORDINGS_DIR: Path = Path("/data/recordings")
+    RECORDER_URL: str = "http://escriba:3000"
+    SESSION_ID_PREFIX: str = "session"

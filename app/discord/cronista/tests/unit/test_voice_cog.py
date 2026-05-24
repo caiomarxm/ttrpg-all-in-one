@@ -1,20 +1,23 @@
-import asyncio
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from contextlib import contextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import UUID
 
 import pytest
 
 from entrypoints.cogs.voice import VoiceCog
 
+_FIXED_UUID = UUID("00000000-0000-4000-8000-000000000001")
 
-def _make_cog(recordings_dir: Path = Path("/tmp/test_recordings")) -> VoiceCog:
+
+def _make_cog() -> VoiceCog:
     bot = MagicMock()
     config = MagicMock()
-    config.RECORDINGS_DIR = recordings_dir
+    config.RECORDER_URL = "http://escriba:3000"
+    config.SESSION_ID_PREFIX = "session"
     return VoiceCog(bot, config)
 
 
-def _make_ctx(*, in_voice: bool, bot_connected: bool) -> AsyncMock:
+def _make_ctx(*, in_voice: bool) -> AsyncMock:
     ctx = AsyncMock()
     ctx.guild_id = 999
 
@@ -22,51 +25,69 @@ def _make_ctx(*, in_voice: bool, bot_connected: bool) -> AsyncMock:
         channel = MagicMock()
         channel.id = 111
         channel.name = "Taverna"
-        channel.connect = AsyncMock()
         ctx.author.voice = MagicMock(channel=channel)
     else:
         ctx.author.voice = None
 
-    if bot_connected:
-        ctx.voice_client = AsyncMock()
-    else:
-        ctx.voice_client = None
-
     return ctx
+
+
+@contextmanager
+def _patch_http_client():
+    mock_client = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_client.post = AsyncMock(return_value=mock_response)
+
+    mock_client_cls = MagicMock()
+    mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("entrypoints.cogs.voice.httpx.AsyncClient", mock_client_cls):
+        yield mock_client
 
 
 @pytest.mark.asyncio
 async def test_join_when_not_in_voice_channel() -> None:
     cog = _make_cog()
-    ctx = _make_ctx(in_voice=False, bot_connected=False)
+    ctx = _make_ctx(in_voice=False)
 
     await cog.join.callback(cog, ctx)
 
     ctx.respond.assert_awaited_once()
     call_kwargs = ctx.respond.call_args.kwargs
     assert call_kwargs.get("ephemeral") is True
-    assert cog._session is None
+    assert cog._session_id is None
 
 
 @pytest.mark.asyncio
-async def test_join_connects_bot_and_creates_session() -> None:
+@patch("entrypoints.cogs.voice.uuid.uuid4", return_value=_FIXED_UUID)
+async def test_join_posts_to_recorder(_mock_uuid: MagicMock) -> None:
     cog = _make_cog()
-    ctx = _make_ctx(in_voice=True, bot_connected=False)
+    ctx = _make_ctx(in_voice=True)
 
-    await cog.join.callback(cog, ctx)
+    with _patch_http_client() as mock_client:
+        await cog.join.callback(cog, ctx)
 
     ctx.defer.assert_awaited_once()
-    ctx.author.voice.channel.connect.assert_awaited_once()
-    assert cog._session is not None
-    assert cog._session.guild_id == 999
-    assert cog._session.channel_id == 111
+    mock_client.post.assert_awaited_once_with(
+        "http://escriba:3000/sessions",
+        json={
+            "sessionId": f"session-{_FIXED_UUID}",
+            "guildId": "999",
+            "channelId": "111",
+        },
+        timeout=30.0,
+    )
+    assert cog._session_id == f"session-{_FIXED_UUID}"
     ctx.followup.send.assert_awaited_once()
+    assert "Gravando" in ctx.followup.send.call_args.args[0]
 
 
 @pytest.mark.asyncio
-async def test_stop_when_bot_not_connected() -> None:
+async def test_stop_when_no_active_session() -> None:
     cog = _make_cog()
-    ctx = _make_ctx(in_voice=True, bot_connected=False)
+    ctx = _make_ctx(in_voice=True)
 
     await cog.stop.callback(cog, ctx)
 
@@ -76,21 +97,20 @@ async def test_stop_when_bot_not_connected() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stop_disconnects_and_clears_session() -> None:
+async def test_stop_posts_stop_and_replies_in_portuguese() -> None:
     cog = _make_cog()
-    ctx = _make_ctx(in_voice=True, bot_connected=True)
+    cog._session_id = "session-abc"
+    ctx = _make_ctx(in_voice=True)
 
-    # Pre-seed a resolved future so stop() doesn't wait on a real recording
-    loop = asyncio.get_event_loop()
-    future: asyncio.Future[list] = loop.create_future()
-    future.set_result([])
-    cog._recording_done = future
+    with _patch_http_client() as mock_client:
+        await cog.stop.callback(cog, ctx)
 
-    ctx.voice_client.is_recording = MagicMock(return_value=True)
-    ctx.voice_client.stop_recording = MagicMock()
-
-    await cog.stop.callback(cog, ctx)
-
-    ctx.voice_client.disconnect.assert_awaited_once()
-    assert cog._session is None
-    ctx.followup.send.assert_awaited_once()
+    ctx.defer.assert_awaited_once()
+    mock_client.post.assert_awaited_once_with(
+        "http://escriba:3000/sessions/session-abc/stop",
+        timeout=30.0,
+    )
+    assert cog._session_id is None
+    ctx.followup.send.assert_awaited_once_with(
+        "Sessão encerrada, gerando transcrição..."
+    )
