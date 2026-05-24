@@ -47,6 +47,8 @@ docker compose up -d postgres
 just migrate-bc session_transcription   # or: just migrate-all
 ```
 
+With the full stack, a one-shot **`migrate`** service runs Alembic before **`api`** starts (`restart: "no"` — exits after success). Re-run manually: `docker compose run --rm migrate`.
+
 New revision for a BC (from `app/api/`):
 
 ```bash

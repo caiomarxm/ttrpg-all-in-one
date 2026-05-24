@@ -20,6 +20,28 @@ services:
         limits:
           memory: 1g
 
+  pgadmin:
+    image: dpage/pgadmin4:8
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./infra/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./infra/pgadmin/pgpass:/pgpass:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
   nats:
     image: nats:2.10-alpine
     command: ["-js", "-sd", "/data", "-m", "8222"]
@@ -90,14 +112,28 @@ services:
         limits:
           memory: 4g
 
+  migrate:
+    build:
+      context: .
+      dockerfile: app/api/Dockerfile
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SESSION_TRANSCRIPTION_DATABASE_URL: postgresql+psycopg://ttrpg:ttrpg@postgres:5432/session_transcription
+      CAMPAIGNS_DATABASE_URL: postgresql+psycopg://ttrpg:ttrpg@postgres:5432/campaigns
+      WIKI_DATABASE_URL: postgresql+psycopg://ttrpg:ttrpg@postgres:5432/wiki
+    entrypoint: ["/bin/sh", "/workspace/app/api/scripts/docker-migrate.sh"]
+
   api:
     build:
       context: .
       dockerfile: app/api/Dockerfile
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       minio:
         condition: service_healthy
       faster-whisper-server:
@@ -165,6 +201,7 @@ services:
 
 volumes:
   postgres_data:
+  pgadmin_data:
   nats_data:
   minio_data:
   faster_whisper_cache:

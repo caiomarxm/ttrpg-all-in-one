@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "ttrpg (docker)",
+      "Group": "TTRPG",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "postgres",
+      "Username": "ttrpg",
+      "PassFile": "/pgpass",
+      "SSLMode": "prefer"
+    }
+  }
+}
