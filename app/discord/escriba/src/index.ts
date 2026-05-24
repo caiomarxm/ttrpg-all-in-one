@@ -1,5 +1,5 @@
 import { loadConfig } from "./config.js";
-import { tryConnectTaskPublisher } from "./celery-publisher.js";
+import { tryConnectTranscriptionNotifier } from "./transcription-client.js";
 import {
   createDiscordClient,
   waitForDiscordReady,
@@ -15,11 +15,13 @@ async function main(): Promise<void> {
   }
 
   const client = createDiscordClient(config.RECORDER_TOKEN);
-  const taskPublisher = await tryConnectTaskPublisher(config.RABBITMQ_URL);
+  const transcriptionNotifier = await tryConnectTranscriptionNotifier(
+    config.TRANSCRIPTION_API_URL,
+  );
   const sessions = new SessionManager(
     client,
     config.RECORDINGS_DIR,
-    taskPublisher,
+    transcriptionNotifier,
     new Set(config.IGNORED_USER_IDS),
   );
 
@@ -35,7 +37,7 @@ async function main(): Promise<void> {
     await sessions.stopAll();
     await sessions.drainFinalizations(30_000);
 
-    await taskPublisher?.close();
+    await transcriptionNotifier?.close();
     client.disconnect({ reconnect: false });
     process.exit(0);
   };

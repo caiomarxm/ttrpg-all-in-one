@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import opus from "@discordjs/opus";
-import type { TaskPublisher } from "../celery-publisher.js";
+import type { TranscriptionNotifier } from "../transcription-client.js";
 import { WAV_HEADER_SIZE } from "../wav.js";
 import {
   Recording,
@@ -64,14 +64,14 @@ describe("isMostlyZeroPacket", () => {
 
 describe("Recording", () => {
   let tempDir = "";
-  let publishTranscribeSession: ReturnType<typeof vi.fn>;
-  let taskPublisher: TaskPublisher;
+  let notifyTranscriptionReady: ReturnType<typeof vi.fn>;
+  let transcriptionNotifier: TranscriptionNotifier;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    publishTranscribeSession = vi.fn().mockResolvedValue(undefined);
-    taskPublisher = {
-      publishTranscribeSession,
+    notifyTranscriptionReady = vi.fn().mockResolvedValue(undefined);
+    transcriptionNotifier = {
+      notifyTranscriptionReady,
       close: vi.fn(),
     };
   });
@@ -89,7 +89,7 @@ describe("Recording", () => {
       client,
       "session-1",
       "/tmp/recordings",
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");
@@ -110,7 +110,7 @@ describe("Recording", () => {
       client,
       "session-1",
       "/tmp/recordings",
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");
@@ -129,7 +129,7 @@ describe("Recording", () => {
       client,
       "session-1",
       "/tmp/recordings",
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");
@@ -145,7 +145,7 @@ describe("Recording", () => {
       client,
       "session-1",
       tempDir,
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");
@@ -162,7 +162,7 @@ describe("Recording", () => {
     expect(connection.disconnect).toHaveBeenCalledTimes(1);
     expect(client.closeVoiceConnection).toHaveBeenCalledWith("guild-1");
     expect(recording.isJoined).toBe(false);
-    expect(publishTranscribeSession).not.toHaveBeenCalled();
+    expect(notifyTranscriptionReady).not.toHaveBeenCalled();
 
     const files = await readdir(path.join(tempDir, "session-1"));
     expect(files.some((name) => name.startsWith("user-1_"))).toBe(true);
@@ -175,7 +175,7 @@ describe("Recording", () => {
       client,
       "session-1",
       tempDir,
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");
@@ -192,19 +192,19 @@ describe("Recording", () => {
     expect(connection.disconnect).toHaveBeenCalledTimes(1);
     expect(client.closeVoiceConnection).toHaveBeenCalledWith("guild-1");
     expect(recording.isJoined).toBe(false);
-    expect(publishTranscribeSession).not.toHaveBeenCalled();
+    expect(notifyTranscriptionReady).not.toHaveBeenCalled();
 
     await expect(stat(path.join(tempDir, "session-1"))).rejects.toThrow();
   });
 
-  it("finalize writes WAV files and publishes transcribe_session", async () => {
+  it("finalize writes WAV files and notifies transcription API", async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
     const { client, receiver } = createMockVoiceSetup();
     const recording = new Recording(
       client,
       "session-1",
       tempDir,
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");
@@ -221,14 +221,17 @@ describe("Recording", () => {
     await recording.finalize();
 
     expect(decode).toHaveBeenCalledTimes(1);
-    expect(publishTranscribeSession).toHaveBeenCalledWith("session-1");
+    expect(notifyTranscriptionReady).toHaveBeenCalledWith(
+      "session-1",
+      expect.arrayContaining([expect.stringMatching(/user-1_.*\.wav$/)]),
+    );
 
     const files = await readdir(path.join(tempDir, "session-1"));
     expect(files.some((name) => name.startsWith("user-1_"))).toBe(true);
     expect(files.some((name) => name.endsWith(".wav"))).toBe(true);
   });
 
-  it("finalize with null taskPublisher writes WAVs and skips publish", async () => {
+  it("finalize with null transcriptionNotifier writes WAVs and skips notify", async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
     const { client, receiver } = createMockVoiceSetup();
     const recording = new Recording(client, "session-1", tempDir, null);
@@ -245,7 +248,7 @@ describe("Recording", () => {
     await recording.stop();
     await expect(recording.finalize()).resolves.toBeUndefined();
 
-    expect(publishTranscribeSession).not.toHaveBeenCalled();
+    expect(notifyTranscriptionReady).not.toHaveBeenCalled();
 
     const files = await readdir(path.join(tempDir, "session-1"));
     expect(files.some((name) => name.endsWith(".wav"))).toBe(true);
@@ -253,7 +256,7 @@ describe("Recording", () => {
 
   it("finalize logs and does not throw when publish fails", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    publishTranscribeSession.mockRejectedValue(new Error("broker down"));
+    notifyTranscriptionReady.mockRejectedValue(new Error("api down"));
 
     tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
     const { client, receiver } = createMockVoiceSetup();
@@ -261,7 +264,7 @@ describe("Recording", () => {
       client,
       "session-1",
       tempDir,
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");
@@ -277,13 +280,13 @@ describe("Recording", () => {
     await expect(recording.finalize()).resolves.toBeUndefined();
 
     expect(errorSpy).toHaveBeenCalledWith(
-      "[recording] transcribe task publish failed; WAV files retained for manual re-enqueue",
+      "[recording] transcription notify failed; WAV files retained for manual recovery",
       expect.objectContaining({
         sessionId: "session-1",
         wavPaths: expect.arrayContaining([
           expect.stringMatching(/user-1_.*\.wav$/),
         ]),
-        error: "broker down",
+        error: "api down",
       }),
     );
 
@@ -297,7 +300,7 @@ describe("Recording", () => {
       client,
       "session-1",
       tempDir,
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");
@@ -313,7 +316,7 @@ describe("Recording", () => {
     await recording.finalize();
     await recording.finalize();
 
-    expect(publishTranscribeSession).toHaveBeenCalledTimes(1);
+    expect(notifyTranscriptionReady).toHaveBeenCalledTimes(1);
   });
 
   it("ignored user packets are dropped and produce no WAV file", async () => {
@@ -323,7 +326,7 @@ describe("Recording", () => {
       client,
       "session-1",
       tempDir,
-      taskPublisher,
+      transcriptionNotifier,
       new Set(["ignored-user"]),
     );
 
@@ -371,7 +374,7 @@ describe("Recording", () => {
       client,
       "session-1",
       tempDir,
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");
@@ -404,13 +407,13 @@ describe("Recording", () => {
       client,
       "session-1",
       "/tmp/recordings",
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.stop();
 
     expect(channel.leave).not.toHaveBeenCalled();
-    expect(publishTranscribeSession).not.toHaveBeenCalled();
+    expect(notifyTranscriptionReady).not.toHaveBeenCalled();
   });
 
   it("writes PCM to disk incrementally before finalize", async () => {
@@ -420,7 +423,7 @@ describe("Recording", () => {
       client,
       "session-1",
       tempDir,
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");
@@ -455,7 +458,7 @@ describe("Recording", () => {
       client,
       "session-1",
       tempDir,
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");
@@ -487,7 +490,7 @@ describe("Recording", () => {
       client,
       "session-1",
       tempDir,
-      taskPublisher,
+      transcriptionNotifier,
     );
 
     await recording.join("guild-1", "channel-1");

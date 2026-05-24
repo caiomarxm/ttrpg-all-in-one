@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TaskPublisher } from "../celery-publisher.js";
+import type { TranscriptionNotifier } from "../transcription-client.js";
 import type { DiscordClientLike } from "../recording.js";
 import { Recording } from "../recording.js";
 import {
@@ -29,12 +29,12 @@ function createMockRecording() {
 
 describe("SessionManager", () => {
   const client = {} as DiscordClientLike;
-  let taskPublisher: TaskPublisher;
+  let transcriptionNotifier: TranscriptionNotifier;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    taskPublisher = {
-      publishTranscribeSession: vi.fn(),
+    transcriptionNotifier = {
+      notifyTranscriptionReady: vi.fn(),
       close: vi.fn(),
     };
   });
@@ -43,7 +43,7 @@ describe("SessionManager", () => {
     vi.useRealTimers();
   });
 
-  it("start works with null taskPublisher", async () => {
+  it("start works with null transcriptionNotifier", async () => {
     const recording = createMockRecording();
     MockRecording.mockImplementation(() => recording as unknown as Recording);
 
@@ -64,7 +64,7 @@ describe("SessionManager", () => {
     const recording = createMockRecording();
     MockRecording.mockImplementation(() => recording as unknown as Recording);
 
-    const manager = new SessionManager(client, "/tmp", taskPublisher);
+    const manager = new SessionManager(client, "/tmp", transcriptionNotifier);
     await manager.start("session-1", "guild-1", "channel-1");
 
     await expect(
@@ -77,7 +77,7 @@ describe("SessionManager", () => {
     const recording = createMockRecording();
     MockRecording.mockImplementation(() => recording as unknown as Recording);
 
-    const manager = new SessionManager(client, "/tmp", taskPublisher);
+    const manager = new SessionManager(client, "/tmp", transcriptionNotifier);
     await manager.start("session-1", "guild-1", "channel-1");
     await manager.start("session-1", "guild-1", "channel-1");
 
@@ -89,7 +89,7 @@ describe("SessionManager", () => {
     const recording = createMockRecording();
     MockRecording.mockImplementation(() => recording as unknown as Recording);
 
-    const manager = new SessionManager(client, "/tmp", taskPublisher);
+    const manager = new SessionManager(client, "/tmp", transcriptionNotifier);
     await manager.start("session-1", "guild-1", "channel-1");
     await manager.stop("session-1");
 
@@ -102,7 +102,7 @@ describe("SessionManager", () => {
     const recording = createMockRecording();
     MockRecording.mockImplementation(() => recording as unknown as Recording);
 
-    const manager = new SessionManager(client, "/tmp", taskPublisher);
+    const manager = new SessionManager(client, "/tmp", transcriptionNotifier);
     await manager.start("session-1", "guild-1", "channel-1");
     await manager.discard("session-1");
 
@@ -115,7 +115,7 @@ describe("SessionManager", () => {
     const recording = createMockRecording();
     MockRecording.mockImplementation(() => recording as unknown as Recording);
 
-    const manager = new SessionManager(client, "/tmp", taskPublisher);
+    const manager = new SessionManager(client, "/tmp", transcriptionNotifier);
     await manager.start("session-1", "guild-1", "channel-1");
     await manager.stopAll();
 
@@ -137,7 +137,7 @@ describe("SessionManager", () => {
     );
     MockRecording.mockImplementation(() => recording as unknown as Recording);
 
-    const manager = new SessionManager(client, "/tmp", taskPublisher);
+    const manager = new SessionManager(client, "/tmp", transcriptionNotifier);
     await manager.start("session-1", "guild-1", "channel-1");
     await manager.stop("session-1");
 
@@ -157,7 +157,7 @@ describe("SessionManager", () => {
     recording.finalize.mockImplementation(() => new Promise(() => {}));
     MockRecording.mockImplementation(() => recording as unknown as Recording);
 
-    const manager = new SessionManager(client, "/tmp", taskPublisher);
+    const manager = new SessionManager(client, "/tmp", transcriptionNotifier);
     await manager.start("session-1", "guild-1", "channel-1");
     await manager.stop("session-1");
 

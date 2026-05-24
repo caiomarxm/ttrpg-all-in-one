@@ -12,7 +12,7 @@ import {
   patchWavHeader,
   speakerWavPath,
 } from "./wav.js";
-import type { TaskPublisher } from "./celery-publisher.js";
+import type { TranscriptionNotifier } from "./transcription-client.js";
 
 export type DiscordClientLike = Pick<
   Eris.Client,
@@ -135,7 +135,7 @@ export class Recording {
     private readonly client: DiscordClientLike,
     private readonly sessionId: string,
     private readonly recordingsDir: string,
-    private readonly taskPublisher: TaskPublisher | null,
+    private readonly transcriptionNotifier: TranscriptionNotifier | null,
     private readonly ignoredUserIds: ReadonlySet<string> = new Set(),
   ) {}
 
@@ -225,16 +225,19 @@ export class Recording {
       return;
     }
 
-    if (!this.taskPublisher) {
+    if (!this.transcriptionNotifier) {
       return;
     }
 
     try {
-      await this.taskPublisher.publishTranscribeSession(this.sessionId);
+      await this.transcriptionNotifier.notifyTranscriptionReady(
+        this.sessionId,
+        wavPaths,
+      );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(
-        "[recording] transcribe task publish failed; WAV files retained for manual re-enqueue",
+        "[recording] transcription notify failed; WAV files retained for manual recovery",
         {
           sessionId: this.sessionId,
           wavPaths,

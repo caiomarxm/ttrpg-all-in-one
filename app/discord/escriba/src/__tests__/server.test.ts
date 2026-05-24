@@ -36,7 +36,7 @@ describe("O Escriba HTTP API", () => {
       loadConfig({
         PORT: "3000",
         RECORDINGS_DIR: "/tmp/recordings-test",
-        RABBITMQ_URL: "amqp://localhost:5672",
+        TRANSCRIPTION_API_URL: "http://localhost:8080/session-transcription",
       }),
       { sessions, discordReady: () => true },
     );
@@ -120,7 +120,7 @@ describe("O Escriba HTTP API", () => {
     });
   });
 
-  it("POST /sessions succeeds when taskPublisher is null", async () => {
+  it("POST /sessions succeeds when transcriptionNotifier is null", async () => {
     const recording = {
       join: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),

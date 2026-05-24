@@ -4,7 +4,9 @@ const envSchema = z.object({
   RECORDER_TOKEN: z.string().optional().default(""),
   RECORDINGS_DIR: z.string().default("/data/recordings"),
   PORT: z.coerce.number().int().positive().default(3000),
-  RABBITMQ_URL: z.string().default("amqp://rabbitmq:5672"),
+  TRANSCRIPTION_API_URL: z
+    .string()
+    .default("http://api:8080/session-transcription"),
   IGNORED_USER_IDS: z
     .string()
     .default("")

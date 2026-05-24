@@ -1,4 +1,4 @@
-import type { TaskPublisher } from "./celery-publisher.js";
+import type { TranscriptionNotifier } from "./transcription-client.js";
 import type { DiscordClientLike } from "./recording.js";
 import { Recording } from "./recording.js";
 
@@ -16,7 +16,7 @@ export class SessionManager {
   constructor(
     private readonly client: DiscordClientLike,
     private readonly recordingsDir: string,
-    private readonly taskPublisher: TaskPublisher | null,
+    private readonly transcriptionNotifier: TranscriptionNotifier | null,
     private readonly ignoredUserIds: ReadonlySet<string> = new Set(),
   ) {}
 
@@ -43,7 +43,7 @@ export class SessionManager {
         this.client,
         sessionId,
         this.recordingsDir,
-        this.taskPublisher,
+        this.transcriptionNotifier,
         this.ignoredUserIds,
       );
       this.sessions.set(sessionId, recording);
