@@ -1,8 +1,16 @@
+import { rename } from "node:fs/promises";
+import { once } from "node:events";
+import type { WriteStream } from "node:fs";
+import { finished } from "node:stream/promises";
 import opus from "@discordjs/opus";
 import * as Eris from "eris";
 
 const { OpusEncoder } = opus;
-import { speakerWavPath, writeSpeakerWav } from "./wav.js";
+import {
+  openSpeakerWavStream,
+  patchWavHeader,
+  speakerWavPath,
+} from "./wav.js";
 import type { TaskPublisher } from "./celery-publisher.js";
 
 export type DiscordClientLike = Pick<
@@ -25,7 +33,8 @@ type JoinableVoiceChannel = {
 
 type SpeakerState = {
   username: string;
-  pcmChunks: Buffer[];
+  filePath: string;
+  stream: WriteStream;
 };
 
 function asJoinableVoiceChannel(
@@ -192,7 +201,7 @@ export class Recording {
     this.finalized = true;
 
     try {
-      await this.flushWavs();
+      await this.finalizeWavs();
       await this.taskPublisher?.publishTranscribeSession(this.sessionId);
     } catch (err: unknown) {
       console.error(
@@ -215,9 +224,17 @@ export class Recording {
     let speaker = this.speakers.get(userId);
     const isNewSpeaker = !speaker;
     if (!speaker) {
+      const placeholderUsername = sanitizeUsername(userId);
+      const filePath = speakerWavPath(
+        this.recordingsDir,
+        this.sessionId,
+        userId,
+        placeholderUsername,
+      );
       speaker = {
-        username: sanitizeUsername(userId),
-        pcmChunks: [],
+        username: placeholderUsername,
+        filePath,
+        stream: openSpeakerWavStream(filePath),
       };
       this.speakers.set(userId, speaker);
     }
@@ -230,18 +247,53 @@ export class Recording {
 
     if (isNewSpeaker) {
       void this.resolveUsername(userId).then((username) => {
-        const existing = this.speakers.get(userId);
-        if (existing) {
-          existing.username = username;
-        }
+        this.updateSpeakerUsername(userId, username);
       });
     }
 
     try {
-      speaker.pcmChunks.push(decoder.decode(data));
+      const pcm = decoder.decode(data);
+      const ok = speaker.stream.write(pcm);
+      if (!ok) {
+        await once(speaker.stream, "drain");
+      }
     } catch (err: unknown) {
       console.warn(
         `[recording] failed to decode opus for userId=${userId}`,
+        err,
+      );
+    }
+  }
+
+  private updateSpeakerUsername(userId: string, username: string): void {
+    const speaker = this.speakers.get(userId);
+    if (!speaker || speaker.username === username) {
+      return;
+    }
+
+    speaker.username = username;
+  }
+
+  private async ensureSpeakerFilePath(
+    userId: string,
+    speaker: SpeakerState,
+  ): Promise<void> {
+    const targetPath = speakerWavPath(
+      this.recordingsDir,
+      this.sessionId,
+      userId,
+      speaker.username,
+    );
+    if (targetPath === speaker.filePath) {
+      return;
+    }
+
+    try {
+      await rename(speaker.filePath, targetPath);
+      speaker.filePath = targetPath;
+    } catch (err: unknown) {
+      console.warn(
+        `[recording] failed to rename wav for userId=${userId}`,
         err,
       );
     }
@@ -274,20 +326,15 @@ export class Recording {
     return sanitizeUsername(userId);
   }
 
-  private async flushWavs(): Promise<void> {
-    const writes = [...this.speakers.entries()].map(([userId, speaker]) =>
-      writeSpeakerWav(
-        speakerWavPath(
-          this.recordingsDir,
-          this.sessionId,
-          userId,
-          speaker.username,
-        ),
-        speaker.pcmChunks,
-      ),
-    );
+  private async finalizeWavs(): Promise<void> {
+    const speakers = [...this.speakers.entries()];
+    for (const [userId, speaker] of speakers) {
+      speaker.stream.end();
+      await finished(speaker.stream);
+      await this.ensureSpeakerFilePath(userId, speaker);
+      await patchWavHeader(speaker.filePath);
+    }
 
-    await Promise.all(writes);
     this.speakers.clear();
     this.decoders.clear();
   }
