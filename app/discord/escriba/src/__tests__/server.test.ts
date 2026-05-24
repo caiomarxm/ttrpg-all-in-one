@@ -2,10 +2,22 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { loadConfig } from "../config.js";
 import { buildServer } from "../server.js";
+import type { DiscordClientLike } from "../recording.js";
+import { Recording } from "../recording.js";
 import {
   SessionAlreadyActiveError,
   SessionManager,
 } from "../session-manager.js";
+
+vi.mock("../recording.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../recording.js")>();
+  return {
+    ...actual,
+    Recording: vi.fn(),
+  };
+});
+
+const MockRecording = vi.mocked(Recording);
 
 describe("O Escriba HTTP API", () => {
   let app: FastifyInstance;
@@ -91,6 +103,46 @@ describe("O Escriba HTTP API", () => {
       ok: false,
       error: "session already active",
     });
+  });
+
+  it("POST /sessions succeeds when taskPublisher is null", async () => {
+    const recording = {
+      join: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+      finalize: vi.fn().mockResolvedValue(undefined),
+      isJoined: false,
+    };
+    MockRecording.mockImplementation(() => recording as unknown as Recording);
+
+    const client = {} as DiscordClientLike;
+    const degradedSessions = new SessionManager(
+      client,
+      "/tmp/recordings-test",
+      null,
+    );
+    const degradedApp = await buildServer(
+      loadConfig({
+        PORT: "3000",
+        RECORDINGS_DIR: "/tmp/recordings-test",
+      }),
+      { sessions: degradedSessions, discordReady: () => true },
+    );
+    await degradedApp.ready();
+
+    const response = await degradedApp.inject({
+      method: "POST",
+      url: "/sessions",
+      payload: {
+        sessionId: "session-degraded",
+        guildId: "123",
+        channelId: "456",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(recording.join).toHaveBeenCalledWith("123", "456");
+    await degradedApp.close();
   });
 
   it("POST /sessions returns 503 when Discord is not ready", async () => {

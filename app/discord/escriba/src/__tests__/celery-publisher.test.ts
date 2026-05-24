@@ -3,6 +3,7 @@ import {
   CELERY_QUEUE,
   TRANSCRIBE_TASK_NAME,
   createCeleryPublisher,
+  tryConnectTaskPublisher,
 } from "../celery-publisher.js";
 
 const amqpMocks = vi.hoisted(() => {
@@ -73,5 +74,47 @@ describe("createCeleryPublisher", () => {
     await publisher.close();
     expect(amqpMocks.channelClose).toHaveBeenCalled();
     expect(amqpMocks.connectionClose).toHaveBeenCalled();
+  });
+});
+
+describe("tryConnectTaskPublisher", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns null and logs when the broker is unavailable", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    amqpMocks.connect.mockRejectedValue(new Error("ECONNREFUSED"));
+
+    const publisher = await tryConnectTaskPublisher("amqp://rabbitmq:5672");
+
+    expect(publisher).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[rabbitmq] broker unavailable at startup; recording without transcription enqueue",
+      {
+        rabbitmqUrl: "amqp://rabbitmq:5672",
+        error: "ECONNREFUSED",
+      },
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("returns a publisher when the broker is reachable", async () => {
+    amqpMocks.connect.mockResolvedValue({
+      createChannel: amqpMocks.createChannel,
+      close: amqpMocks.connectionClose,
+    });
+    amqpMocks.createChannel.mockResolvedValue({
+      assertQueue: amqpMocks.assertQueue,
+      publish: amqpMocks.publish,
+      close: amqpMocks.channelClose,
+    });
+    amqpMocks.assertQueue.mockResolvedValue({});
+
+    const publisher = await tryConnectTaskPublisher("amqp://localhost");
+
+    expect(publisher).not.toBeNull();
+    await publisher?.close();
   });
 });

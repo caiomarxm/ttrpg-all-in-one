@@ -199,6 +199,68 @@ describe("Recording", () => {
     expect(files.some((name) => name.endsWith(".wav"))).toBe(true);
   });
 
+  it("finalize with null taskPublisher writes WAVs and skips publish", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
+    const { client, receiver } = createMockVoiceSetup();
+    const recording = new Recording(client, "session-1", tempDir, null);
+
+    await recording.join("guild-1", "channel-1");
+
+    const onData = receiver.on.mock.calls[0][1] as (
+      data: Buffer,
+      userId: string,
+    ) => void;
+    onData(Buffer.from([1, 2, 3, 4]), "user-1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await recording.stop();
+    await expect(recording.finalize()).resolves.toBeUndefined();
+
+    expect(publishTranscribeSession).not.toHaveBeenCalled();
+
+    const files = await readdir(path.join(tempDir, "session-1"));
+    expect(files.some((name) => name.endsWith(".wav"))).toBe(true);
+  });
+
+  it("finalize logs and does not throw when publish fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    publishTranscribeSession.mockRejectedValue(new Error("broker down"));
+
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
+    const { client, receiver } = createMockVoiceSetup();
+    const recording = new Recording(
+      client,
+      "session-1",
+      tempDir,
+      taskPublisher,
+    );
+
+    await recording.join("guild-1", "channel-1");
+
+    const onData = receiver.on.mock.calls[0][1] as (
+      data: Buffer,
+      userId: string,
+    ) => void;
+    onData(Buffer.from([1, 2, 3, 4]), "user-1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await recording.stop();
+    await expect(recording.finalize()).resolves.toBeUndefined();
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[recording] transcribe task publish failed; WAV files retained for manual re-enqueue",
+      expect.objectContaining({
+        sessionId: "session-1",
+        wavPaths: expect.arrayContaining([
+          expect.stringMatching(/user-1_.*\.wav$/),
+        ]),
+        error: "broker down",
+      }),
+    );
+
+    errorSpy.mockRestore();
+  });
+
   it("finalize is idempotent", async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
     const { client, receiver } = createMockVoiceSetup();

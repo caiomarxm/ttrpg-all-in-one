@@ -200,15 +200,33 @@ export class Recording {
     }
     this.finalized = true;
 
+    let wavPaths: string[];
     try {
-      await this.finalizeWavs();
-      await this.taskPublisher?.publishTranscribeSession(this.sessionId);
+      wavPaths = await this.finalizeWavs();
     } catch (err: unknown) {
       console.error(
         `[recording] finalize failed sessionId=${this.sessionId}`,
         err,
       );
       throw err;
+    }
+
+    if (!this.taskPublisher) {
+      return;
+    }
+
+    try {
+      await this.taskPublisher.publishTranscribeSession(this.sessionId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        "[recording] transcribe task publish failed; WAV files retained for manual re-enqueue",
+        {
+          sessionId: this.sessionId,
+          wavPaths,
+          error: message,
+        },
+      );
     }
   }
 
@@ -326,16 +344,19 @@ export class Recording {
     return sanitizeUsername(userId);
   }
 
-  private async finalizeWavs(): Promise<void> {
+  private async finalizeWavs(): Promise<string[]> {
+    const wavPaths: string[] = [];
     const speakers = [...this.speakers.entries()];
     for (const [userId, speaker] of speakers) {
       speaker.stream.end();
       await finished(speaker.stream);
       await this.ensureSpeakerFilePath(userId, speaker);
       await patchWavHeader(speaker.filePath);
+      wavPaths.push(speaker.filePath);
     }
 
     this.speakers.clear();
     this.decoders.clear();
+    return wavPaths;
   }
 }

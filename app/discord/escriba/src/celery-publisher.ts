@@ -9,6 +9,21 @@ export type TaskPublisher = {
   close(): Promise<void>;
 };
 
+export async function tryConnectTaskPublisher(
+  rabbitmqUrl: string,
+): Promise<TaskPublisher | null> {
+  try {
+    return await createCeleryPublisher(rabbitmqUrl);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      "[rabbitmq] broker unavailable at startup; recording without transcription enqueue",
+      { rabbitmqUrl, error: message },
+    );
+    return null;
+  }
+}
+
 export async function createCeleryPublisher(
   rabbitmqUrl: string,
 ): Promise<TaskPublisher> {

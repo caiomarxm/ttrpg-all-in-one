@@ -1,5 +1,5 @@
 import { loadConfig } from "./config.js";
-import { createCeleryPublisher } from "./celery-publisher.js";
+import { tryConnectTaskPublisher } from "./celery-publisher.js";
 import {
   createDiscordClient,
   waitForDiscordReady,
@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   }
 
   const client = createDiscordClient(config.RECORDER_TOKEN);
-  const taskPublisher = await createCeleryPublisher(config.RABBITMQ_URL);
+  const taskPublisher = await tryConnectTaskPublisher(config.RABBITMQ_URL);
   const sessions = new SessionManager(
     client,
     config.RECORDINGS_DIR,

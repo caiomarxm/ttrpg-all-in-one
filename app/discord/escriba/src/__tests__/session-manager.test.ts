@@ -42,6 +42,23 @@ describe("SessionManager", () => {
     vi.useRealTimers();
   });
 
+  it("start works with null taskPublisher", async () => {
+    const recording = createMockRecording();
+    MockRecording.mockImplementation(() => recording as unknown as Recording);
+
+    const manager = new SessionManager(client, "/tmp", null);
+    await manager.start("session-1", "guild-1", "channel-1");
+
+    expect(MockRecording).toHaveBeenCalledWith(
+      client,
+      "session-1",
+      "/tmp",
+      null,
+      expect.any(Set),
+    );
+    expect(recording.join).toHaveBeenCalledWith("guild-1", "channel-1");
+  });
+
   it("start rejects a second session while one is active", async () => {
     const recording = createMockRecording();
     MockRecording.mockImplementation(() => recording as unknown as Recording);
