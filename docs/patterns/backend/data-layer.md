@@ -190,3 +190,14 @@ IAM_DATABASE_URL=postgresql://user:pass@host/iam_db
 ```
 
 Same host is fine; different database is required.
+
+---
+
+## Migrations (Alembic)
+
+- **Shared tooling** — `persistence/alembic.ini`, `persistence/migrations/env.py`, `persistence/migrations/script.py.mako`, and `persistence/bc_registry.py` at the repo root.
+- **BC-owned revisions** — `app/api/modules/{bc}/persistence/migration/versions/*.py` only; no per-module `alembic.ini` or `env.py`.
+- **Run per BC** — `alembic -c persistence/alembic.ini -n <bc> upgrade head` (or `just migrate-bc <bc>`). Each database has its own `alembic_version` table and revision chain.
+- **No cross-BC `depends_on`** in migration files — separate databases.
+
+Register new BCs in `persistence/bc_registry.py` and add a `[bc]` section with `version_locations` in `persistence/alembic.ini`.

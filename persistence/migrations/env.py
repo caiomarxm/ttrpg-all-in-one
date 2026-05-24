@@ -1,39 +1,53 @@
-"""Alembic env — run with config at repo ``persistence/alembic.ini``.
+"""Alembic env — one setup for all BCs. Run from ``app/api``:
 
-``prepend_sys_path`` plus the path tweak below ensures BC SQLModel tables register on ``SQLModel.metadata``.
+``uv run alembic -c ../../persistence/alembic.ini -n session_transcription upgrade head``
 """
 
 from __future__ import annotations
 
+import importlib
 import sys
-from pathlib import Path
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_API_ROOT = _REPO_ROOT / "app" / "api"
-# Ensures SQLite path in alembic.ini works until Postgres + Docker Compose replaces it.
-_PERSIST_VAR = Path(__file__).resolve().parents[1] / "var"
-_PERSIST_VAR.mkdir(parents=True, exist_ok=True)
-if str(_API_ROOT) not in sys.path:
-    sys.path.insert(0, str(_API_ROOT))
-
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
+
+_PERSISTENCE_ROOT = Path(__file__).resolve().parents[1]
+_REPO_ROOT = _PERSISTENCE_ROOT.parent
+_API_ROOT = _REPO_ROOT / "app" / "api"
+
+for path in (_API_ROOT, _PERSISTENCE_ROOT):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+from bc_registry import get_bc_config  # noqa: E402
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+_section = config.config_ini_section
+if _section == "alembic":
+    raise RuntimeError(
+        "Specify a bounded context with -n, e.g. "
+        "alembic -c persistence/alembic.ini -n session_transcription upgrade head"
+    )
+
+_bc = get_bc_config(_section)
+config.set_main_option("sqlalchemy.url", _bc.database_url())
+
+for _module in _bc.model_modules:
+    importlib.import_module(_module)
+
 target_metadata = SQLModel.metadata
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=_bc.database_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -44,8 +58,10 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    configuration = config.get_section(config.config_ini_section, {})
+    configuration["sqlalchemy.url"] = _bc.database_url()
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

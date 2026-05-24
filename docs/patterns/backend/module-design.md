@@ -19,7 +19,7 @@ modules/{bc}/
     model/           ← SQLModel table=True definitions
     repository/      ← BaseRepository subclasses
     migration/
-      versions/      ← Alembic migration files
+      versions/      ← Alembic revision scripts only (shared env.py at persistence/)
   http/
     router/          ← FastAPI APIRouter functions (lean)
     dto/

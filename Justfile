@@ -13,6 +13,15 @@ format-backend:
 test-backend:
   cd app/api && uv run pytest
 
+migrate-bc bc:
+  cd app/api && uv run alembic -c ../../persistence/alembic.ini -n {{bc}} upgrade head
+
+migrate-all:
+  just migrate-bc session_transcription
+
+migrate-session-transcription:
+  just migrate-bc session_transcription
+
 dev-backend:
   set -a
   if [ -f .env.local ]; then . ./.env.local; fi
@@ -43,11 +52,10 @@ test-bot-unit:
 test-recorder:
   cd app/discord/escriba && npm test
 
-test-transcriber:
-  cd app/transcriber && uv run pytest tests/unit tests/integration/test_transcriber.py -v
-
-test-transcriber-docker:
-  cd app/transcriber && uv run pytest tests/integration/test_transcriber_docker.py -v
+test:
+  just test-backend
+  just test-recorder
+  just test-bot-unit
 
 build-recorder:
   cd app/discord/escriba && npm run build

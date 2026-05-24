@@ -4,10 +4,6 @@ Modular FastAPI service. Bounded contexts live under `modules/<bc>/` with the la
 
 Scaffolded BCs: **`campaigns`** (includes `CampaignsPublicApi` + `MemberRole`), **`iam`**. Placeholder routes: `GET /campaigns`, `GET /iam`.
 
-Alembic config lives under **`persistence/`** at the **repository root** (not inside `app/api/`).
-
-**Database direction:** **SQLite** is intended **only for in-memory test fixtures** (`docs/patterns/backend/testing.md`). **PostgreSQL** for local development will be introduced with the **Docker Compose** task (not wired here yet). Until then, file-based SQLite under `persistence/var/` may remain as a short-lived bootstrap — replace with Compose-driven Postgres URLs when that task lands.
-
 ## Run
 
 From **`app/api/`** (where `pyproject.toml` lives):
@@ -28,17 +24,23 @@ Then open `GET http://127.0.0.1:8000/health`.
 
 ## Alembic
 
-Monorepo Alembic config: **`persistence/alembic.ini`**. Local SQLite files (provisional): **`persistence/var/`** (gitignored).
+One Alembic setup at repo root: **`persistence/alembic.ini`**. Revision files live in each BC under `modules/<bc>/persistence/migration/versions/`.
 
-BC-specific migrations under each module’s `persistence/migration/` still apply per `module-design.md`; this tree is for shared bootstrap / glue only.
-
-From **`app/api/`**:
+Always pass **`-n <bc>`** (bounded context name). From **`app/api/`**:
 
 ```bash
-uv run alembic -c ../../persistence/alembic.ini upgrade head
+uv run alembic -c ../../persistence/alembic.ini -n session_transcription upgrade head
 ```
 
-Build artifacts such as **`ttrpg_api.egg-info/`** are produced next to `pyproject.toml` during `uv sync`; they are listed in `.gitignore` and safe to delete locally.
+Or from repo root: `just migrate-bc session_transcription`.
+
+Autogenerate a new revision:
+
+```bash
+uv run alembic -c ../../persistence/alembic.ini -n session_transcription revision -m "describe change" --autogenerate
+```
+
+See **`CONTRIBUTING.md`** for Postgres layout and `just migrate-all`.
 
 ## Tests
 
