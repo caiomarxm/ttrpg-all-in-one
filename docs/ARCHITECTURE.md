@@ -48,6 +48,7 @@
 | Assets | Cloud SQL (metadata) + GCS (files) | Pre-signed URLs for direct client upload; CDN-served reads |
 | Maps | Cloud SQL | Layered map definition; live state owned by Session |
 | Session | Centrifugo (runtime) + Cloud SQL (snapshots) | Ephemeral real-time state; periodic persistence |
+| Session Transcription | Cloud SQL (Transcripts) + GCS (Recordings) | Owns Recording upload, Whisper API call, Transcript storage, and Artifact generation trigger |
 | Assistant | Cloud SQL | Conversation threads, message history, tool call logs |
 
 **One Cloud SQL database per bounded context.** Each BC has its own database with however many schemas and tables it needs. Enforces strict data ownership at the infrastructure level and preserves the extraction path to microservices.
@@ -86,15 +87,18 @@ Centrifugo rooms map 1:1 to live sessions. Presence channels (who's connected) a
 
 ## AI Layer
 
-The Assistant BC exposes a tool registry. AI provider SDK calls are wrapped in client classes under `http/client/` — `AssistantService` never imports an SDK directly.
+AI provider SDK calls are wrapped in client classes under `http/client/` — services never import an SDK directly.
 
 ```
 AssistantService
   └── AnthropicClient  (or OpenAIClient / OllamaClient — chosen by config)
   └── ImageGenClient   (DALL-E or Replicate — chosen by config)
+
+SessionTranscriptionService
+  └── WhisperClient    (OpenAI Whisper API in production; faster-whisper-server locally — chosen by WHISPER_BASE_URL)
 ```
 
-**Provider selection:** a simple factory in `config.py` / `dependencies.py` reads `ASSISTANT_LLM_PROVIDER` and returns the right client. Users choose their LLM model per conversation; GMs choose the image generation provider in campaign settings.
+**Provider selection:** a simple factory in `config.py` / `dependencies.py` reads the relevant env var and returns the right client. The `WhisperClient` is identical in local and production — only `WHISPER_BASE_URL` differs (see ADR-0003).
 
 **Tool registry:** the Assistant calls the same API endpoints as the frontend (dual-purpose API principle). No special internal shortcuts — if the frontend can do it, the AI can do it through the same interface.
 
@@ -119,16 +123,16 @@ The IAM module stores AuthZ data (resource grants, custom permissions) in its ow
 | Concern | Service |
 |---|---|
 | Cloud provider | Google Cloud Platform |
-| App hosting | Cloud Run (stateless NestJS containers) |
+| App hosting | Single Compute Engine VM (Docker Compose) |
 | Database | Cloud SQL (PostgreSQL), one instance per BC |
-| File storage | Cloud Storage (GCS) |
+| File storage | Cloud Storage (GCS); MinIO in local dev |
 | Auth | Firebase Authentication |
-| Real-time | Centrifugo + NATS on a single Compute Engine instance |
-| CDN (assets) | Cloud CDN in front of GCS |
-| Container registry | Artifact Registry |
-| Secrets | Secret Manager |
+| Frontend hosting | Firebase Hosting |
+| Real-time | Centrifugo + NATS (same Compute Engine VM) |
 
-**Centrifugo + NATS** run together on a small Compute Engine instance (not Cloud Run — they are stateful). For a hobby-scale project this is a single `e2-small` or similar.
+**All backend services** (FastAPI, Centrifugo, NATS, Cronista bot, O Escriba, local transcriber stub) run on a single Compute Engine instance via Docker Compose. Deployment is `git pull && docker compose up --build -d`. See ADR-0004 for the rationale.
+
+**GCS** stores uploaded assets and Session Recordings. Recordings are stored under a `recordings/` prefix with a 30-day lifecycle rule — deleted automatically after that window. Local dev uses MinIO (S3-compatible, same client code, different endpoint).
 
 ---
 

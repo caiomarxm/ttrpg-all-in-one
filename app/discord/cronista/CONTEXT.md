@@ -1,6 +1,6 @@
 # O Cronista — Bot
 
-O Cronista is the Discord-facing bounded context. It encompasses four deployment units: the **Cronista bot** (Session lifecycle and slash commands), **O Escriba** (voice recording), the **Transcription Service** (audio-to-text), and the **Cronista Worker** (Artifact generation).
+O Cronista is the Discord-facing bounded context. It encompasses two deployment units: the **Cronista bot** (Session lifecycle and slash commands) and **O Escriba** (voice recording). Transcription and Artifact generation are owned by the `session_transcription` API module.
 
 ## Language
 
