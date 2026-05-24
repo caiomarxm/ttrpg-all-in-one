@@ -20,6 +20,7 @@ async function main(): Promise<void> {
     client,
     config.RECORDINGS_DIR,
     taskPublisher,
+    new Set(config.IGNORED_USER_IDS),
   );
 
   const shutdown = async () => {

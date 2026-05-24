@@ -5,6 +5,10 @@ const envSchema = z.object({
   RECORDINGS_DIR: z.string().default("/data/recordings"),
   PORT: z.coerce.number().int().positive().default(3000),
   RABBITMQ_URL: z.string().default("amqp://rabbitmq:5672"),
+  IGNORED_USER_IDS: z
+    .string()
+    .default("")
+    .transform((s) => s.split(",").map((id) => id.trim()).filter(Boolean)),
 });
 
 export type Config = z.infer<typeof envSchema>;

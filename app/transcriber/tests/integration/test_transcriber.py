@@ -58,4 +58,8 @@ def test_transcribe_session_writes_merged_pt_transcript(tmp_path: Path) -> None:
     assert "alice" in content
     assert "gravação" in content
 
+    per_speaker = session_dir / "transcript_alice.txt"
+    assert per_speaker.exists()
+    assert "gravação" in per_speaker.read_text(encoding="utf-8")
+
 

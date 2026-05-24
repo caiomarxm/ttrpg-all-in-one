@@ -1,3 +1,4 @@
+from collections import defaultdict
 from pathlib import Path
 
 from faster_whisper import WhisperModel
@@ -63,7 +64,14 @@ def transcribe_session(
     for wav_path in wav_files:
         all_segments.extend(transcribe_wav(whisper, wav_path))
 
-    transcript = Transcript(all_segments)
+    by_speaker: dict[str, list[Segment]] = defaultdict(list)
+    for seg in all_segments:
+        by_speaker[seg.speaker].append(seg)
+
+    for speaker, segs in by_speaker.items():
+        per_speaker_path = session_dir / f"transcript_{speaker}.txt"
+        per_speaker_path.write_text(Transcript(segs).format(), encoding="utf-8")
+
     output_path = session_dir / "transcript.txt"
-    output_path.write_text(transcript.format(), encoding="utf-8")
+    output_path.write_text(Transcript(all_segments).format(), encoding="utf-8")
     return output_path

@@ -9,6 +9,7 @@ export class SessionManager {
     private readonly client: DiscordClientLike,
     private readonly recordingsDir: string,
     private readonly taskPublisher: TaskPublisher | null,
+    private readonly ignoredUserIds: ReadonlySet<string> = new Set(),
   ) {}
 
   async start(
@@ -23,6 +24,7 @@ export class SessionManager {
         sessionId,
         this.recordingsDir,
         this.taskPublisher,
+        this.ignoredUserIds,
       );
       this.sessions.set(sessionId, recording);
     }

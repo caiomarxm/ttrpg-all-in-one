@@ -166,6 +166,35 @@ describe("Recording", () => {
     expect(files.some((name) => name.endsWith(".wav"))).toBe(true);
   });
 
+  it("ignored user packets are dropped and produce no WAV file", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
+    const { client, receiver } = createMockVoiceSetup();
+    const recording = new Recording(
+      client,
+      "session-1",
+      tempDir,
+      taskPublisher,
+      new Set(["ignored-user"]),
+    );
+
+    await recording.join("guild-1", "channel-1");
+
+    const onData = receiver.on.mock.calls[0][1] as (
+      data: Buffer,
+      userId: string,
+    ) => void;
+    onData(Buffer.from([1, 2, 3, 4]), "ignored-user");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await recording.stop();
+
+    const files = await readdir(path.join(tempDir, "session-1")).catch(
+      () => [] as string[],
+    );
+    expect(files.some((name) => name.startsWith("ignored-user_"))).toBe(false);
+    expect(decode).not.toHaveBeenCalled();
+  });
+
   it("stop without join is a no-op", async () => {
     const { client, channel } = createMockVoiceSetup();
     const recording = new Recording(

@@ -125,6 +125,7 @@ export class Recording {
     private readonly sessionId: string,
     private readonly recordingsDir: string,
     private readonly taskPublisher: TaskPublisher | null,
+    private readonly ignoredUserIds: ReadonlySet<string> = new Set(),
   ) {}
 
   get isJoined(): boolean {
@@ -187,7 +188,7 @@ export class Recording {
   }
 
   private onData = (data: Buffer, userId: string): void => {
-    if (!userId || isMostlyZeroPacket(data)) {
+    if (!userId || isMostlyZeroPacket(data) || this.ignoredUserIds.has(userId)) {
       return;
     }
 
