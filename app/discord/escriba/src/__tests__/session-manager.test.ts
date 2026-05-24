@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TaskPublisher } from "../celery-publisher.js";
 import type { DiscordClientLike } from "../recording.js";
 import { Recording } from "../recording.js";
-import { SessionManager } from "../session-manager.js";
+import {
+  SessionAlreadyActiveError,
+  SessionManager,
+} from "../session-manager.js";
 
 vi.mock("../recording.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../recording.js")>();
@@ -39,6 +42,31 @@ describe("SessionManager", () => {
     vi.useRealTimers();
   });
 
+  it("start rejects a second session while one is active", async () => {
+    const recording = createMockRecording();
+    MockRecording.mockImplementation(() => recording as unknown as Recording);
+
+    const manager = new SessionManager(client, "/tmp", taskPublisher);
+    await manager.start("session-1", "guild-1", "channel-1");
+
+    await expect(
+      manager.start("session-2", "guild-1", "channel-2"),
+    ).rejects.toThrow(SessionAlreadyActiveError);
+    expect(MockRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it("start allows re-join for the same session id", async () => {
+    const recording = createMockRecording();
+    MockRecording.mockImplementation(() => recording as unknown as Recording);
+
+    const manager = new SessionManager(client, "/tmp", taskPublisher);
+    await manager.start("session-1", "guild-1", "channel-1");
+    await manager.start("session-1", "guild-1", "channel-1");
+
+    expect(recording.join).toHaveBeenCalledTimes(2);
+    expect(MockRecording).toHaveBeenCalledTimes(1);
+  });
+
   it("stop removes session and finalizes in the background", async () => {
     const recording = createMockRecording();
     MockRecording.mockImplementation(() => recording as unknown as Recording);
@@ -52,22 +80,17 @@ describe("SessionManager", () => {
     expect(MockRecording).toHaveBeenCalledTimes(1);
   });
 
-  it("stopAll stops every active session", async () => {
-    const first = createMockRecording();
-    const second = createMockRecording();
-    MockRecording.mockImplementationOnce(
-      () => first as unknown as Recording,
-    ).mockImplementationOnce(() => second as unknown as Recording);
+  it("stopAll stops the active session", async () => {
+    const recording = createMockRecording();
+    MockRecording.mockImplementation(() => recording as unknown as Recording);
 
     const manager = new SessionManager(client, "/tmp", taskPublisher);
     await manager.start("session-1", "guild-1", "channel-1");
-    await manager.start("session-2", "guild-1", "channel-2");
     await manager.stopAll();
 
-    expect(first.stop).toHaveBeenCalledTimes(1);
-    expect(second.stop).toHaveBeenCalledTimes(1);
-    expect(first.finalize).toHaveBeenCalledTimes(1);
-    expect(second.finalize).toHaveBeenCalledTimes(1);
+    expect(recording.stop).toHaveBeenCalledTimes(1);
+    expect(recording.finalize).toHaveBeenCalledTimes(1);
+    expect(MockRecording).toHaveBeenCalledTimes(1);
   });
 
   it("drainFinalizations waits for in-flight finalize promises", async () => {

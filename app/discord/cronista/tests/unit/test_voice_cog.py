@@ -4,7 +4,7 @@ from uuid import UUID
 
 import pytest
 
-from entrypoints.cogs.voice import VoiceCog
+from entrypoints.cogs.voice import RecorderSessionConflictError, VoiceCog
 
 _FIXED_UUID = UUID("00000000-0000-4000-8000-000000000001")
 
@@ -61,6 +61,21 @@ async def test_join_when_not_in_voice_channel() -> None:
 
 
 @pytest.mark.asyncio
+async def test_join_when_session_already_active() -> None:
+    cog = _make_cog()
+    cog._session_id = "session-existing"
+    ctx = _make_ctx(in_voice=True)
+
+    await cog.join.callback(cog, ctx)
+
+    ctx.respond.assert_awaited_once()
+    call_kwargs = ctx.respond.call_args.kwargs
+    assert call_kwargs.get("ephemeral") is True
+    assert "/stop" in ctx.respond.call_args.args[0]
+    ctx.defer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @patch("entrypoints.cogs.voice.uuid.uuid4", return_value=_FIXED_UUID)
 async def test_join_posts_to_recorder(_mock_uuid: MagicMock) -> None:
     cog = _make_cog()
@@ -82,6 +97,50 @@ async def test_join_posts_to_recorder(_mock_uuid: MagicMock) -> None:
     assert cog._session_id == f"session-{_FIXED_UUID}"
     ctx.followup.send.assert_awaited_once()
     assert "Gravando" in ctx.followup.send.call_args.args[0]
+
+
+@pytest.mark.asyncio
+@patch("entrypoints.cogs.voice.uuid.uuid4", return_value=_FIXED_UUID)
+async def test_join_handles_escriba_409(_mock_uuid: MagicMock) -> None:
+    cog = _make_cog()
+    ctx = _make_ctx(in_voice=True)
+
+    mock_client = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 409
+    mock_response.raise_for_status = MagicMock()
+    mock_client.post = AsyncMock(return_value=mock_response)
+
+    mock_client_cls = MagicMock()
+    mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("entrypoints.cogs.voice.httpx.AsyncClient", mock_client_cls):
+        await cog.join.callback(cog, ctx)
+
+    ctx.defer.assert_awaited_once()
+    mock_response.raise_for_status.assert_not_called()
+    assert cog._session_id is None
+    ctx.followup.send.assert_awaited_once()
+    assert "Escriba" in ctx.followup.send.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_start_recording_raises_on_409() -> None:
+    cog = _make_cog()
+
+    mock_client = AsyncMock()
+    mock_response = MagicMock()
+    mock_response.status_code = 409
+    mock_client.post = AsyncMock(return_value=mock_response)
+
+    mock_client_cls = MagicMock()
+    mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("entrypoints.cogs.voice.httpx.AsyncClient", mock_client_cls):
+        with pytest.raises(RecorderSessionConflictError):
+            await cog._start_recording("session-new", 999, 111)
 
 
 @pytest.mark.asyncio

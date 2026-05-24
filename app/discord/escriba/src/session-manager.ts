@@ -2,6 +2,13 @@ import type { TaskPublisher } from "./celery-publisher.js";
 import type { DiscordClientLike } from "./recording.js";
 import { Recording } from "./recording.js";
 
+export class SessionAlreadyActiveError extends Error {
+  constructor() {
+    super("session already active");
+    this.name = "SessionAlreadyActiveError";
+  }
+}
+
 export class SessionManager {
   private readonly sessions = new Map<string, Recording>();
   private readonly pendingFinalizations = new Map<string, Promise<void>>();
@@ -13,11 +20,23 @@ export class SessionManager {
     private readonly ignoredUserIds: ReadonlySet<string> = new Set(),
   ) {}
 
+  get activeSessionCount(): number {
+    return this.sessions.size;
+  }
+
+  hasActiveSession(): boolean {
+    return this.sessions.size > 0;
+  }
+
   async start(
     sessionId: string,
     guildId: string,
     channelId: string,
   ): Promise<void> {
+    if (this.hasActiveSession() && !this.sessions.has(sessionId)) {
+      throw new SessionAlreadyActiveError();
+    }
+
     let recording = this.sessions.get(sessionId);
     if (!recording) {
       recording = new Recording(

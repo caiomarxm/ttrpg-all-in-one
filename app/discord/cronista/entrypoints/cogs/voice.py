@@ -9,6 +9,10 @@ from config import Config
 log = logging.getLogger(__name__)
 
 
+class RecorderSessionConflictError(Exception):
+    """Escriba rejected start because another session is already recording."""
+
+
 class VoiceCog(discord.Cog):
     def __init__(self, bot: discord.Bot, config: Config) -> None:
         self.bot = bot
@@ -17,6 +21,13 @@ class VoiceCog(discord.Cog):
 
     @discord.slash_command(name="join", description="Entrar no seu canal de voz")
     async def join(self, ctx: discord.ApplicationContext) -> None:
+        if self._session_id is not None:
+            await ctx.respond(
+                "Já existe uma sessão ativa. Use /stop para encerrá-la.",
+                ephemeral=True,
+            )
+            return
+
         if ctx.author.voice is None:
             log.info(f"/join — user={ctx.author} not in a voice channel")
             await ctx.respond("Você precisa estar em um canal de voz.", ephemeral=True)
@@ -29,6 +40,11 @@ class VoiceCog(discord.Cog):
 
         try:
             await self._start_recording(session_id, ctx.guild_id, channel.id)
+        except RecorderSessionConflictError:
+            await ctx.followup.send(
+                "O Escriba já está gravando. Use /stop para encerrar a sessão anterior."
+            )
+            return
         except httpx.HTTPError:
             log.exception(
                 "/join — failed to start recording session_id=%s guild=%s",
@@ -91,6 +107,14 @@ class VoiceCog(discord.Cog):
                 },
                 timeout=30.0,
             )
+            if response.status_code == 409:
+                log.warning(
+                    "Escriba rejected start — session already active "
+                    "(session_id=%s guild=%s)",
+                    session_id,
+                    guild_id,
+                )
+                raise RecorderSessionConflictError()
             response.raise_for_status()
 
     async def _stop_recording(self, session_id: str) -> None:

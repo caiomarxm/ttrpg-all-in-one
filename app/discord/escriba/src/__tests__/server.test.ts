@@ -2,13 +2,20 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { loadConfig } from "../config.js";
 import { buildServer } from "../server.js";
-import type { SessionManager } from "../session-manager.js";
+import {
+  SessionAlreadyActiveError,
+  SessionManager,
+} from "../session-manager.js";
 
 describe("O Escriba HTTP API", () => {
   let app: FastifyInstance;
   const start = vi.fn().mockResolvedValue(undefined);
   const stop = vi.fn().mockResolvedValue(undefined);
-  const sessions = { start, stop } as unknown as SessionManager;
+  const sessions = {
+    start,
+    stop,
+    activeSessionCount: 0,
+  } as unknown as SessionManager;
 
   beforeAll(async () => {
     app = await buildServer(
@@ -26,11 +33,11 @@ describe("O Escriba HTTP API", () => {
     await app.close();
   });
 
-  it("GET /health returns 200 { ok: true }", async () => {
+  it("GET /health returns 200 with active session count", async () => {
     const response = await app.inject({ method: "GET", url: "/health" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ ok: true });
+    expect(response.json()).toEqual({ ok: true, activeSessions: 0 });
   });
 
   it("POST /sessions starts session via SessionManager", async () => {
@@ -62,6 +69,28 @@ describe("O Escriba HTTP API", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
     expect(stop).toHaveBeenCalledWith("session-test");
+  });
+
+  it("POST /sessions returns 409 when a session is already active", async () => {
+    start.mockImplementationOnce(() => {
+      throw new SessionAlreadyActiveError();
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      payload: {
+        sessionId: "session-other",
+        guildId: "123",
+        channelId: "456",
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      ok: false,
+      error: "session already active",
+    });
   });
 
   it("POST /sessions returns 503 when Discord is not ready", async () => {
