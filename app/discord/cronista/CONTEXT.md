@@ -9,7 +9,7 @@ The second Discord bot whose only responsibility is joining a voice channel and 
 _Avoid_: Recorder, sidecar, recorder bot
 
 **Session**:
-A single RPG gathering. Starts when the Game Master runs `/join`. Ends with `/stop` or is abandoned with `/discard`. Tolerates multiple voice channel reconnections — recording accumulates across them.
+A single RPG gathering. Starts when the Game Master runs `/join`. Ends with `/stop` or is abandoned with `/discard`. Tolerates voice channel reconnections within the same bot process lifetime — a reconnect resumes the same Session rather than starting a new one. A bot restart forfeits the active Session.
 _Avoid_: Meeting, recording, game
 
 **Recording**:
