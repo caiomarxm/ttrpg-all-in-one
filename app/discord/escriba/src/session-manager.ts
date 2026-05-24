@@ -73,6 +73,25 @@ export class SessionManager {
     });
   }
 
+  async discard(sessionId: string): Promise<void> {
+    const recording = this.sessions.get(sessionId);
+    if (!recording) {
+      return;
+    }
+
+    this.sessions.delete(sessionId);
+
+    try {
+      await recording.discard();
+    } catch (err: unknown) {
+      console.error(
+        `[session-manager] discard failed sessionId=${sessionId}`,
+        err,
+      );
+      throw err;
+    }
+  }
+
   async stopAll(): Promise<void> {
     const sessionIds = [...this.sessions.keys()];
     await Promise.all(sessionIds.map((sessionId) => this.stop(sessionId)));

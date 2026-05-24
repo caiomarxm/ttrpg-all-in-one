@@ -94,5 +94,29 @@ export async function buildServer(
     return { ok: true };
   });
 
+  app.post("/sessions/:id/discard", async (request, reply) => {
+    if (!sessions || !discordReady()) {
+      return reply.code(503).send({
+        ok: false,
+        error: "Discord client not ready",
+      });
+    }
+
+    const { id } = request.params as { id: string };
+
+    try {
+      await sessions.discard(id);
+    } catch (err: unknown) {
+      request.log.error(err, "failed to discard recording session");
+      return reply.code(500).send({
+        ok: false,
+        error:
+          err instanceof Error ? err.message : "Failed to discard recording session",
+      });
+    }
+
+    return { ok: true };
+  });
+
   return app;
 }

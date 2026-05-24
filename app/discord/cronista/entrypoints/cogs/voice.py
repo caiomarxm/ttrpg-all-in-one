@@ -94,6 +94,39 @@ class VoiceCog(discord.Cog):
         )
         await ctx.followup.send("Sessão encerrada, gerando transcrição...")
 
+    @discord.slash_command(
+        name="discard",
+        description="Descartar a sessão sem transcrever",
+    )
+    async def discard(self, ctx: discord.ApplicationContext) -> None:
+        if self._session_id is None:
+            log.info(f"/discard — user={ctx.author} no active session")
+            await ctx.respond("Nenhuma sessão ativa.", ephemeral=True)
+            return
+
+        await ctx.defer(ephemeral=True)
+        session_id = self._session_id
+
+        try:
+            await self._discard_recording(session_id)
+        except httpx.HTTPError:
+            log.exception(
+                "/discard — failed to discard recording session_id=%s guild=%s",
+                session_id,
+                ctx.guild_id,
+            )
+            await ctx.followup.send("Não foi possível descartar a gravação.")
+            return
+
+        self._session_id = None
+        log.info(
+            "/discard — user=%s guild=%s session_id=%s",
+            ctx.author,
+            ctx.guild_id,
+            session_id,
+        )
+        await ctx.followup.send("Sessão descartada.")
+
     async def _start_recording(
         self, session_id: str, guild_id: int, channel_id: int
     ) -> None:
@@ -121,6 +154,14 @@ class VoiceCog(discord.Cog):
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self._config.RECORDER_URL}/sessions/{session_id}/stop",
+                timeout=30.0,
+            )
+            response.raise_for_status()
+
+    async def _discard_recording(self, session_id: str) -> None:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{self._config.RECORDER_URL}/sessions/{session_id}/discard",
                 timeout=30.0,
             )
             response.raise_for_status()

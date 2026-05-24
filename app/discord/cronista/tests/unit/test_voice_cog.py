@@ -173,3 +173,34 @@ async def test_stop_posts_stop_and_replies_in_portuguese() -> None:
     ctx.followup.send.assert_awaited_once_with(
         "Sessão encerrada, gerando transcrição..."
     )
+
+
+@pytest.mark.asyncio
+async def test_discard_when_no_active_session() -> None:
+    cog = _make_cog()
+    ctx = _make_ctx(in_voice=True)
+
+    await cog.discard.callback(cog, ctx)
+
+    ctx.respond.assert_awaited_once()
+    call_kwargs = ctx.respond.call_args.kwargs
+    assert call_kwargs.get("ephemeral") is True
+    ctx.defer.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_discard_posts_discard_and_replies() -> None:
+    cog = _make_cog()
+    cog._session_id = "session-abc"
+    ctx = _make_ctx(in_voice=True)
+
+    with _patch_http_client() as mock_client:
+        await cog.discard.callback(cog, ctx)
+
+    ctx.defer.assert_awaited_once_with(ephemeral=True)
+    mock_client.post.assert_awaited_once_with(
+        "http://escriba:3000/sessions/session-abc/discard",
+        timeout=30.0,
+    )
+    assert cog._session_id is None
+    ctx.followup.send.assert_awaited_once_with("Sessão descartada.")

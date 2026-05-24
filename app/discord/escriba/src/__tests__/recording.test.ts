@@ -168,6 +168,35 @@ describe("Recording", () => {
     expect(files.some((name) => name.startsWith("user-1_"))).toBe(true);
   });
 
+  it("discard leaves voice, deletes recordings, and does not publish", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
+    const { client, connection, receiver } = createMockVoiceSetup();
+    const recording = new Recording(
+      client,
+      "session-1",
+      tempDir,
+      taskPublisher,
+    );
+
+    await recording.join("guild-1", "channel-1");
+
+    const onData = receiver.on.mock.calls[0][1] as (
+      data: Buffer,
+      userId: string,
+    ) => void;
+    onData(Buffer.from([1, 2, 3, 4]), "user-1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await recording.discard();
+
+    expect(connection.disconnect).toHaveBeenCalledTimes(1);
+    expect(client.closeVoiceConnection).toHaveBeenCalledWith("guild-1");
+    expect(recording.isJoined).toBe(false);
+    expect(publishTranscribeSession).not.toHaveBeenCalled();
+
+    await expect(stat(path.join(tempDir, "session-1"))).rejects.toThrow();
+  });
+
   it("finalize writes WAV files and publishes transcribe_session", async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
     const { client, receiver } = createMockVoiceSetup();

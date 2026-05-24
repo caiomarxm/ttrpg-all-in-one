@@ -21,6 +21,7 @@ function createMockRecording() {
   return {
     join: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn().mockResolvedValue(undefined),
+    discard: vi.fn().mockResolvedValue(undefined),
     finalize: vi.fn().mockResolvedValue(undefined),
     isJoined: false,
   };
@@ -94,6 +95,19 @@ describe("SessionManager", () => {
 
     expect(recording.stop).toHaveBeenCalledTimes(1);
     expect(recording.finalize).toHaveBeenCalledTimes(1);
+    expect(MockRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it("discard removes session without finalizing", async () => {
+    const recording = createMockRecording();
+    MockRecording.mockImplementation(() => recording as unknown as Recording);
+
+    const manager = new SessionManager(client, "/tmp", taskPublisher);
+    await manager.start("session-1", "guild-1", "channel-1");
+    await manager.discard("session-1");
+
+    expect(recording.discard).toHaveBeenCalledTimes(1);
+    expect(recording.finalize).not.toHaveBeenCalled();
     expect(MockRecording).toHaveBeenCalledTimes(1);
   });
 

@@ -1,4 +1,5 @@
-import { rename } from "node:fs/promises";
+import { rename, rm } from "node:fs/promises";
+import path from "node:path";
 import { once } from "node:events";
 import type { WriteStream } from "node:fs";
 import { finished } from "node:stream/promises";
@@ -194,6 +195,19 @@ export class Recording {
     this.channelId = null;
   }
 
+  async discard(): Promise<void> {
+    if (this.finalized) {
+      return;
+    }
+    this.finalized = true;
+
+    await this.stop();
+    this.abandonOpenStreams();
+
+    const sessionDir = path.join(this.recordingsDir, this.sessionId);
+    await rm(sessionDir, { recursive: true, force: true });
+  }
+
   async finalize(): Promise<void> {
     if (this.finalized) {
       return;
@@ -342,6 +356,14 @@ export class Recording {
     }
 
     return sanitizeUsername(userId);
+  }
+
+  private abandonOpenStreams(): void {
+    for (const speaker of this.speakers.values()) {
+      speaker.stream.destroy();
+    }
+    this.speakers.clear();
+    this.decoders.clear();
   }
 
   private async finalizeWavs(): Promise<string[]> {

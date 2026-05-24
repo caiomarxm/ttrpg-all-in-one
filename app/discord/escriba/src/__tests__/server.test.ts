@@ -23,9 +23,11 @@ describe("O Escriba HTTP API", () => {
   let app: FastifyInstance;
   const start = vi.fn().mockResolvedValue(undefined);
   const stop = vi.fn().mockResolvedValue(undefined);
+  const discard = vi.fn().mockResolvedValue(undefined);
   const sessions = {
     start,
     stop,
+    discard,
     activeSessionCount: 0,
   } as unknown as SessionManager;
 
@@ -81,6 +83,19 @@ describe("O Escriba HTTP API", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
     expect(stop).toHaveBeenCalledWith("session-test");
+  });
+
+  it("POST /sessions/:id/discard discards session via SessionManager", async () => {
+    discard.mockClear();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/session-test/discard",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(discard).toHaveBeenCalledWith("session-test");
   });
 
   it("POST /sessions returns 409 when a session is already active", async () => {
