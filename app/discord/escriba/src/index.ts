@@ -23,8 +23,19 @@ async function main(): Promise<void> {
     new Set(config.IGNORED_USER_IDS),
   );
 
+  let shuttingDown = false;
+
   const shutdown = async () => {
-    await taskPublisher.close();
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+
+    console.log("[shutdown] stopping active recording sessions");
+    await sessions.stopAll();
+    await sessions.drainFinalizations(30_000);
+
+    await taskPublisher?.close();
     client.disconnect({ reconnect: false });
     process.exit(0);
   };

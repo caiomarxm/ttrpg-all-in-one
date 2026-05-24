@@ -4,6 +4,7 @@ import { Recording } from "./recording.js";
 
 export class SessionManager {
   private readonly sessions = new Map<string, Recording>();
+  private readonly pendingFinalizations = new Map<string, Promise<void>>();
 
   constructor(
     private readonly client: DiscordClientLike,
@@ -40,5 +41,49 @@ export class SessionManager {
 
     await recording.stop();
     this.sessions.delete(sessionId);
+
+    const finalizePromise = recording.finalize().catch((err: unknown) => {
+      console.error(
+        `[session-manager] background finalize failed sessionId=${sessionId}`,
+        err,
+      );
+    });
+    this.pendingFinalizations.set(sessionId, finalizePromise);
+    void finalizePromise.finally(() => {
+      this.pendingFinalizations.delete(sessionId);
+    });
+  }
+
+  async stopAll(): Promise<void> {
+    const sessionIds = [...this.sessions.keys()];
+    await Promise.all(sessionIds.map((sessionId) => this.stop(sessionId)));
+  }
+
+  async drainFinalizations(timeoutMs: number): Promise<void> {
+    const pending = [...this.pendingFinalizations.entries()];
+    if (pending.length === 0) {
+      return;
+    }
+
+    const sessionIds = pending.map(([sessionId]) => sessionId);
+    const promises = pending.map(([, promise]) => promise);
+
+    let timedOut = false;
+    await Promise.race([
+      Promise.all(promises),
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          timedOut = true;
+          resolve();
+        }, timeoutMs);
+      }),
+    ]);
+
+    if (timedOut) {
+      console.warn(
+        `[session-manager] finalize drain timed out after ${timeoutMs}ms`,
+        { sessionIds },
+      );
+    }
   }
 }

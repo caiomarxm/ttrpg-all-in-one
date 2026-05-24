@@ -134,9 +134,40 @@ describe("Recording", () => {
     expect(channel.join).toHaveBeenCalledTimes(1);
   });
 
-  it("stop writes WAV files and publishes transcribe_session", async () => {
+  it("stop leaves voice immediately without writing WAVs or publishing", async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
-    const { client, channel, connection, receiver } = createMockVoiceSetup();
+    const { client, connection, receiver } = createMockVoiceSetup();
+    const recording = new Recording(
+      client,
+      "session-1",
+      tempDir,
+      taskPublisher,
+    );
+
+    await recording.join("guild-1", "channel-1");
+
+    const onData = receiver.on.mock.calls[0][1] as (
+      data: Buffer,
+      userId: string,
+    ) => void;
+    onData(Buffer.from([1, 2, 3, 4]), "user-1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await recording.stop();
+
+    expect(connection.disconnect).toHaveBeenCalledTimes(1);
+    expect(client.closeVoiceConnection).toHaveBeenCalledWith("guild-1");
+    expect(recording.isJoined).toBe(false);
+    expect(publishTranscribeSession).not.toHaveBeenCalled();
+
+    await expect(
+      readdir(path.join(tempDir, "session-1")),
+    ).rejects.toThrow();
+  });
+
+  it("finalize writes WAV files and publishes transcribe_session", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
+    const { client, receiver } = createMockVoiceSetup();
     const recording = new Recording(
       client,
       "session-1",
@@ -155,15 +186,40 @@ describe("Recording", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     await recording.stop();
+    await recording.finalize();
 
-    expect(connection.disconnect).toHaveBeenCalledTimes(1);
-    expect(client.closeVoiceConnection).toHaveBeenCalledWith("guild-1");
     expect(decode).toHaveBeenCalledTimes(1);
     expect(publishTranscribeSession).toHaveBeenCalledWith("session-1");
 
     const files = await readdir(path.join(tempDir, "session-1"));
     expect(files.some((name) => name.startsWith("user-1_"))).toBe(true);
     expect(files.some((name) => name.endsWith(".wav"))).toBe(true);
+  });
+
+  it("finalize is idempotent", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
+    const { client, receiver } = createMockVoiceSetup();
+    const recording = new Recording(
+      client,
+      "session-1",
+      tempDir,
+      taskPublisher,
+    );
+
+    await recording.join("guild-1", "channel-1");
+
+    const onData = receiver.on.mock.calls[0][1] as (
+      data: Buffer,
+      userId: string,
+    ) => void;
+    onData(Buffer.from([1, 2, 3, 4]), "user-1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await recording.stop();
+    await recording.finalize();
+    await recording.finalize();
+
+    expect(publishTranscribeSession).toHaveBeenCalledTimes(1);
   });
 
   it("ignored user packets are dropped and produce no WAV file", async () => {
@@ -187,6 +243,7 @@ describe("Recording", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     await recording.stop();
+    await recording.finalize();
 
     const files = await readdir(path.join(tempDir, "session-1")).catch(
       () => [] as string[],

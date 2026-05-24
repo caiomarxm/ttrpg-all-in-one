@@ -117,6 +117,7 @@ export class Recording {
   private guildId: string | null = null;
   private channelId: string | null = null;
   private joined = false;
+  private finalized = false;
   private readonly speakers = new Map<string, SpeakerState>();
   private readonly decoders = new Map<string, InstanceType<typeof OpusEncoder>>();
 
@@ -182,9 +183,24 @@ export class Recording {
     this.channel = null;
     this.guildId = null;
     this.channelId = null;
+  }
 
-    await this.flushWavs();
-    await this.taskPublisher?.publishTranscribeSession(this.sessionId);
+  async finalize(): Promise<void> {
+    if (this.finalized) {
+      return;
+    }
+    this.finalized = true;
+
+    try {
+      await this.flushWavs();
+      await this.taskPublisher?.publishTranscribeSession(this.sessionId);
+    } catch (err: unknown) {
+      console.error(
+        `[recording] finalize failed sessionId=${this.sessionId}`,
+        err,
+      );
+      throw err;
+    }
   }
 
   private onData = (data: Buffer, userId: string): void => {
