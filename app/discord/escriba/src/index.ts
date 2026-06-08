@@ -23,6 +23,7 @@ async function main(): Promise<void> {
     config.RECORDINGS_DIR,
     transcriptionNotifier,
     new Set(config.IGNORED_USER_IDS),
+    config.SILENCE_GAP_MS,
   );
 
   let shuttingDown = false;

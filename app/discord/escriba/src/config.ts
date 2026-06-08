@@ -11,6 +11,7 @@ const envSchema = z.object({
     .string()
     .default("")
     .transform((s) => s.split(",").map((id) => id.trim()).filter(Boolean)),
+  SILENCE_GAP_MS: z.coerce.number().int().positive().default(2000),
 });
 
 export type Config = z.infer<typeof envSchema>;

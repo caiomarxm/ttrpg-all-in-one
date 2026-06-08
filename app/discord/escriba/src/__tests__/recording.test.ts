@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import opus from "@discordjs/opus";
 import type { TranscriptionNotifier } from "../transcription-client.js";
+import { MANIFEST_FILENAME } from "../session-manifest.js";
 import { WAV_HEADER_SIZE } from "../wav.js";
 import {
   Recording,
@@ -398,7 +399,10 @@ describe("Recording", () => {
     expect(decode).toHaveBeenCalledTimes(10);
 
     const files = await readdir(path.join(tempDir, "session-1"));
-    expect(files).toEqual(["user-1_Alice.wav"]);
+    expect(files).toEqual(
+      expect.arrayContaining(["user-1_Alice.wav", "session_manifest.json"]),
+    );
+    expect(files).toHaveLength(2);
   });
 
   it("stop without join is a no-op", async () => {
@@ -474,7 +478,9 @@ describe("Recording", () => {
     await recording.finalize();
 
     const files = await readdir(path.join(tempDir, "session-1"));
-    const wav = await readFile(path.join(tempDir, "session-1", files[0]!));
+    const wavFile = files.find((name) => name.endsWith(".wav"));
+    expect(wavFile).toBeDefined();
+    const wav = await readFile(path.join(tempDir, "session-1", wavFile!));
 
     expect(wav.toString("ascii", 0, 4)).toBe("RIFF");
     expect(wav.toString("ascii", 8, 12)).toBe("WAVE");
@@ -515,5 +521,157 @@ describe("Recording", () => {
     expect(wav.readUInt32LE(4)).toBe(36 + 1920 * 2);
     expect(wav.readUInt32LE(40)).toBe(1920 * 2);
     expect(wav.length).toBe(WAV_HEADER_SIZE + 1920 * 2);
+  });
+
+  describe("Speaking burst manifest", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("anchors session clock on join and writes manifest on finalize", async () => {
+      tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
+      const { client, receiver } = createMockVoiceSetup();
+      const joinTime = 1_700_000_000_000;
+      vi.setSystemTime(joinTime);
+
+      const recording = new Recording(client, "session-1", tempDir, null);
+
+      await recording.join("guild-1", "channel-1");
+      vi.setSystemTime(joinTime + 500);
+
+      const onData = receiver.on.mock.calls[0][1] as (
+        data: Buffer,
+        userId: string,
+      ) => void;
+      onData(Buffer.from([1]), "user-1");
+      await vi.runAllTimersAsync();
+
+      await recording.stop();
+      await recording.finalize();
+
+      const manifestRaw = await readFile(
+        path.join(tempDir, "session-1", MANIFEST_FILENAME),
+        "utf-8",
+      );
+      const manifest = JSON.parse(manifestRaw) as {
+        session_started_at_ms: number;
+        speakers: Record<
+          string,
+          { speaking_bursts: Array<{ session_offset_ms: number }> }
+        >;
+      };
+
+      expect(manifest.session_started_at_ms).toBe(joinTime);
+      expect(manifest.speakers["user-1"]?.speaking_bursts).toHaveLength(1);
+      expect(manifest.speakers["user-1"]?.speaking_bursts[0]?.session_offset_ms).toBe(
+        500,
+      );
+    });
+
+    it("creates two bursts when packets are spaced beyond SILENCE_GAP_MS", async () => {
+      tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
+      const { client, receiver } = createMockVoiceSetup();
+      const joinTime = 1_700_000_000_000;
+      vi.setSystemTime(joinTime);
+
+      const recording = new Recording(
+        client,
+        "session-1",
+        tempDir,
+        null,
+        new Set(),
+        2000,
+      );
+
+      await recording.join("guild-1", "channel-1");
+
+      const onData = receiver.on.mock.calls[0][1] as (
+        data: Buffer,
+        userId: string,
+      ) => void;
+
+      vi.setSystemTime(joinTime + 100);
+      onData(Buffer.from([1]), "user-1");
+      await vi.runAllTimersAsync();
+
+      vi.setSystemTime(joinTime + 5000);
+      onData(Buffer.from([2]), "user-1");
+      await vi.runAllTimersAsync();
+
+      await recording.stop();
+      await recording.finalize();
+
+      const manifestRaw = await readFile(
+        path.join(tempDir, "session-1", MANIFEST_FILENAME),
+        "utf-8",
+      );
+      const manifest = JSON.parse(manifestRaw) as {
+        speakers: Record<
+          string,
+          {
+            speaking_bursts: Array<{
+              session_offset_ms: number;
+              wav_offset_bytes: number;
+              pcm_bytes: number;
+            }>;
+          }
+        >;
+      };
+
+      const bursts = manifest.speakers["user-1"]?.speaking_bursts;
+      expect(bursts).toHaveLength(2);
+      expect(bursts?.[0]?.session_offset_ms).toBe(100);
+      expect(bursts?.[0]?.wav_offset_bytes).toBe(0);
+      expect(bursts?.[0]?.pcm_bytes).toBe(1920);
+      expect(bursts?.[1]?.session_offset_ms).toBe(5000);
+      expect(bursts?.[1]?.wav_offset_bytes).toBe(1920);
+      expect(bursts?.[1]?.pcm_bytes).toBe(1920);
+    });
+
+    it("keeps a single burst for continuous packets", async () => {
+      tempDir = await mkdtemp(path.join(os.tmpdir(), "escriba-rec-"));
+      const { client, receiver } = createMockVoiceSetup();
+      const joinTime = 1_700_000_000_000;
+      vi.setSystemTime(joinTime);
+
+      const recording = new Recording(
+        client,
+        "session-1",
+        tempDir,
+        null,
+        new Set(),
+        2000,
+      );
+
+      await recording.join("guild-1", "channel-1");
+
+      const onData = receiver.on.mock.calls[0][1] as (
+        data: Buffer,
+        userId: string,
+      ) => void;
+
+      for (let offset = 0; offset <= 1500; offset += 500) {
+        vi.setSystemTime(joinTime + offset);
+        onData(Buffer.from([offset]), "user-1");
+        await vi.runAllTimersAsync();
+      }
+
+      await recording.stop();
+      await recording.finalize();
+
+      const manifestRaw = await readFile(
+        path.join(tempDir, "session-1", MANIFEST_FILENAME),
+        "utf-8",
+      );
+      const manifest = JSON.parse(manifestRaw) as {
+        speakers: Record<string, { speaking_bursts: unknown[] }>;
+      };
+
+      expect(manifest.speakers["user-1"]?.speaking_bursts).toHaveLength(1);
+    });
   });
 });

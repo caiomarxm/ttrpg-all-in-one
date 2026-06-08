@@ -17,6 +17,11 @@ from modules.session_transcription.http.client.storage_client import StorageClie
 from modules.session_transcription.http.client.whisper_client import WhisperClient, WhisperSegment
 from modules.session_transcription.persistence.model.transcript import SessionTranscriptionTranscript
 from modules.session_transcription.persistence.repository.transcript_repository import TranscriptRepository
+from modules.session_transcription.core.service.timeline_reconciliation import (
+    format_session_timestamp,
+    load_session_manifest,
+    reconcile_segments,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +29,7 @@ logger = logging.getLogger(__name__)
 def format_transcript(segments: list[WhisperSegment]) -> str:
     ordered = sorted(segments, key=lambda segment: segment.start)
     lines = [
-        f"[{segment.start:.1f}s] {segment.speaker}: {segment.text}"
+        f"{format_session_timestamp(segment.start)} {segment.speaker}: {segment.text}"
         for segment in ordered
         if segment.text
     ]
@@ -87,6 +92,9 @@ class TranscriptionService:
         if not wav_paths:
             raise FileNotFoundError(f"No WAV files found for session {session_id}")
 
+        session_dir = Path(self._config.RECORDINGS_DIR) / session_id
+        manifest = load_session_manifest(session_dir)
+
         storage_prefix = f"recordings/{session_id}"
         all_segments: list[WhisperSegment] = []
 
@@ -97,7 +105,8 @@ class TranscriptionService:
 
             object_key = f"{storage_prefix}/{wav_path.name}"
             self._storage.upload_file(wav_path, object_key)
-            all_segments.extend(self._whisper.transcribe_wav(wav_path))
+            raw_segments = self._whisper.transcribe_wav(wav_path)
+            all_segments.extend(reconcile_segments(raw_segments, manifest, wav_path))
 
         transcript = self._repo.find_by_session_id(session_id)
         if transcript is not None:
@@ -109,7 +118,6 @@ class TranscriptionService:
         for segment in all_segments:
             by_speaker[segment.speaker].append(segment)
 
-        session_dir = Path(self._config.RECORDINGS_DIR) / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         for speaker, speaker_segments in by_speaker.items():
             per_speaker_path = session_dir / f"transcript_{speaker}.txt"

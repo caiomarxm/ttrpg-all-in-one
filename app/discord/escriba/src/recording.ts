@@ -11,8 +11,18 @@ import {
   openSpeakerWavStream,
   patchWavHeader,
   speakerWavPath,
+  WAV_BIT_DEPTH,
+  WAV_CHANNELS,
+  WAV_SAMPLE_RATE,
 } from "./wav.js";
 import type { TranscriptionNotifier } from "./transcription-client.js";
+import {
+  pcmBytesPerSecond,
+  SESSION_MANIFEST_VERSION,
+  type SpeakingBurst,
+  type SpeakerManifestEntry,
+  writeSessionManifest,
+} from "./session-manifest.js";
 
 export type DiscordClientLike = Pick<
   Eris.Client,
@@ -36,6 +46,10 @@ type SpeakerState = {
   username: string;
   filePath: string;
   stream: WriteStream;
+  speakingBursts: SpeakingBurst[];
+  currentBurstIndex: number;
+  totalPcmBytes: number;
+  lastPacketAtMs: number;
 };
 
 function asJoinableVoiceChannel(
@@ -130,6 +144,7 @@ export class Recording {
   private finalized = false;
   private readonly speakers = new Map<string, SpeakerState>();
   private readonly decoders = new Map<string, InstanceType<typeof OpusEncoder>>();
+  private sessionStartedAtMs: number | null = null;
 
   constructor(
     private readonly client: DiscordClientLike,
@@ -137,6 +152,7 @@ export class Recording {
     private readonly recordingsDir: string,
     private readonly transcriptionNotifier: TranscriptionNotifier | null,
     private readonly ignoredUserIds: ReadonlySet<string> = new Set(),
+    private readonly silenceGapMs = 2000,
   ) {}
 
   get isJoined(): boolean {
@@ -164,6 +180,7 @@ export class Recording {
     this.guildId = guildId;
     this.channelId = channelId;
     this.joined = true;
+    this.sessionStartedAtMs = Date.now();
   }
 
   async stop(): Promise<void> {
@@ -270,6 +287,10 @@ export class Recording {
         username: placeholderUsername,
         filePath,
         stream: openSpeakerWavStream(filePath),
+        speakingBursts: [],
+        currentBurstIndex: -1,
+        totalPcmBytes: 0,
+        lastPacketAtMs: 0,
       };
       this.speakers.set(userId, speaker);
     }
@@ -288,6 +309,7 @@ export class Recording {
 
     try {
       const pcm = decoder.decode(data);
+      this.recordPcmPacket(speaker, pcm.length);
       const ok = speaker.stream.write(pcm);
       if (!ok) {
         await once(speaker.stream, "drain");
@@ -298,6 +320,36 @@ export class Recording {
         err,
       );
     }
+  }
+
+  private recordPcmPacket(speaker: SpeakerState, pcmLength: number): void {
+    const nowMs = Date.now();
+    const sessionOffsetMs =
+      this.sessionStartedAtMs !== null ? nowMs - this.sessionStartedAtMs : 0;
+
+    if (speaker.speakingBursts.length === 0) {
+      speaker.speakingBursts.push({
+        session_offset_ms: sessionOffsetMs,
+        wav_offset_bytes: speaker.totalPcmBytes,
+        pcm_bytes: 0,
+      });
+      speaker.currentBurstIndex = 0;
+    } else if (
+      speaker.lastPacketAtMs > 0 &&
+      nowMs - speaker.lastPacketAtMs > this.silenceGapMs
+    ) {
+      speaker.speakingBursts.push({
+        session_offset_ms: sessionOffsetMs,
+        wav_offset_bytes: speaker.totalPcmBytes,
+        pcm_bytes: 0,
+      });
+      speaker.currentBurstIndex = speaker.speakingBursts.length - 1;
+    }
+
+    const burst = speaker.speakingBursts[speaker.currentBurstIndex]!;
+    burst.pcm_bytes += pcmLength;
+    speaker.totalPcmBytes += pcmLength;
+    speaker.lastPacketAtMs = nowMs;
   }
 
   private updateSpeakerUsername(userId: string, username: string): void {
@@ -380,6 +432,33 @@ export class Recording {
         return speaker.filePath;
       }),
     );
+
+    if (this.sessionStartedAtMs !== null && speakers.length > 0) {
+      const sessionDir = path.join(this.recordingsDir, this.sessionId);
+      const speakerEntries: Record<string, SpeakerManifestEntry> = {};
+
+      for (const [userId, speaker] of speakers) {
+        speakerEntries[userId] = {
+          user_id: userId,
+          username: speaker.username,
+          wav_file: path.basename(speaker.filePath),
+          speaking_bursts: speaker.speakingBursts,
+        };
+      }
+
+      await writeSessionManifest(sessionDir, {
+        version: SESSION_MANIFEST_VERSION,
+        session_id: this.sessionId,
+        session_started_at_ms: this.sessionStartedAtMs,
+        audio: {
+          sample_rate: WAV_SAMPLE_RATE,
+          channels: WAV_CHANNELS,
+          bit_depth: WAV_BIT_DEPTH,
+          bytes_per_second: pcmBytesPerSecond(),
+        },
+        speakers: speakerEntries,
+      });
+    }
 
     this.speakers.clear();
     this.decoders.clear();

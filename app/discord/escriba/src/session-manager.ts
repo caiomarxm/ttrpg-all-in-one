@@ -18,6 +18,7 @@ export class SessionManager {
     private readonly recordingsDir: string,
     private readonly transcriptionNotifier: TranscriptionNotifier | null,
     private readonly ignoredUserIds: ReadonlySet<string> = new Set(),
+    private readonly silenceGapMs = 2000,
   ) {}
 
   get activeSessionCount(): number {
@@ -45,6 +46,7 @@ export class SessionManager {
         this.recordingsDir,
         this.transcriptionNotifier,
         this.ignoredUserIds,
+        this.silenceGapMs,
       );
       this.sessions.set(sessionId, recording);
     }

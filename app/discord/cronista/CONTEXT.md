@@ -13,8 +13,12 @@ A single RPG gathering. Starts when the Game Master runs `/join`. Ends with `/st
 _Avoid_: Meeting, recording, game
 
 **Recording**:
-The raw per-speaker audio captured during a Session — one audio file per participant. The input to transcription.
+The raw per-speaker audio captured during a Session — one audio file per participant. The input to transcription. O Escriba also writes a `session_manifest.json` sidecar with Speaking burst metadata consumed by `session_transcription`.
 _Avoid_: Track, audio file, wav, capture
+
+**Speaking burst**:
+A contiguous period of speech from one participant, separated from other speech by at least two seconds of silence. Metadata on a Recording — not a separate audio file — used to reconcile Whisper timestamps to the Session clock.
+_Avoid_: Chunk, segment, clip, utterance
 
 **Transcript**:
 The raw text output of transcribing a Session's audio. The source material for Artifact generation.

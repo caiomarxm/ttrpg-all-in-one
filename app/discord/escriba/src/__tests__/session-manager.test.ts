@@ -56,6 +56,7 @@ describe("SessionManager", () => {
       "/tmp",
       null,
       expect.any(Set),
+      2000,
     );
     expect(recording.join).toHaveBeenCalledWith("guild-1", "channel-1");
   });
