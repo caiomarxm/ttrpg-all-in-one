@@ -10,10 +10,11 @@ class SessionTranscriptionSettings(BaseSettings):
 
     RECORDINGS_DIR: str = "/data/recordings"
 
-    WHISPER_BASE_URL: str = "http://localhost:8010/v1"
-    WHISPER_API_KEY: str = "local-dev"
-    WHISPER_MODEL: str = "Systran/faster-whisper-small"
-    WHISPER_LANGUAGE: str = "pt"
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "openai/gpt-4o-transcribe"
+    TRANSCRIPTION_LANGUAGE: str = "pt"
+    TRANSCRIPTION_PROMPT: str = "Alô, alô, o que é que você está fazendo?"
 
     STORAGE_ENABLED: bool = False
     STORAGE_ENDPOINT_URL: str = "http://localhost:9000"

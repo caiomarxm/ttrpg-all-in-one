@@ -94,7 +94,10 @@ def test_run_transcription_stores_completed_transcript(
     assert "[00:00:00] alice: ola" in transcript.content
     assert transcript.storage_prefix == f"recordings/{session_id}"
     storage.upload_file.assert_called_once()
-    whisper.transcribe_wav.assert_called_once_with(wav_path)
+    whisper.transcribe_wav.assert_called_once()
+    call_kwargs = whisper.transcribe_wav.call_args.kwargs
+    assert call_kwargs["speaking_bursts"] is not None
+    assert call_kwargs["bytes_per_second"] == float(BYTES_PER_SECOND)
     assert (session_dir / "transcript.txt").exists()
 
 

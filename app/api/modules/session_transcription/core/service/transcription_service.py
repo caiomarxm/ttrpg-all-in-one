@@ -13,15 +13,16 @@ from modules.session_transcription.config import (
     get_session_transcription_settings,
 )
 from modules.session_transcription.core.enum.transcription_enum import TranscriptStatus
-from modules.session_transcription.http.client.storage_client import StorageClient
-from modules.session_transcription.http.client.whisper_client import WhisperClient, WhisperSegment
-from modules.session_transcription.persistence.model.transcript import SessionTranscriptionTranscript
-from modules.session_transcription.persistence.repository.transcript_repository import TranscriptRepository
 from modules.session_transcription.core.service.timeline_reconciliation import (
     format_session_timestamp,
     load_session_manifest,
     reconcile_segments,
+    user_id_from_wav,
 )
+from modules.session_transcription.http.client.storage_client import StorageClient
+from modules.session_transcription.http.client.whisper_client import WhisperClient, WhisperSegment
+from modules.session_transcription.persistence.model.transcript import SessionTranscriptionTranscript
+from modules.session_transcription.persistence.repository.transcript_repository import TranscriptRepository
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,13 @@ class TranscriptionService:
             if self._storage is not None:
                 object_key = f"{storage_prefix}/{wav_path.name}"
                 self._storage.upload_file(wav_path, object_key)
-            raw_segments = self._whisper.transcribe_wav(wav_path)
+            speaker_entry = manifest.speakers.get(user_id_from_wav(wav_path))
+            speaking_bursts = speaker_entry.speaking_bursts if speaker_entry is not None else None
+            raw_segments = self._whisper.transcribe_wav(
+                wav_path,
+                speaking_bursts=speaking_bursts,
+                bytes_per_second=float(manifest.audio.bytes_per_second),
+            )
             all_segments.extend(reconcile_segments(raw_segments, manifest, wav_path))
 
         transcript = self._repo.find_by_session_id(session_id)
