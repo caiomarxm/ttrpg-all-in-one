@@ -15,4 +15,9 @@ def get_session_transcription_engine() -> Engine:
 
 def get_session_transcription_session() -> Iterator[Session]:
     with Session(get_session_transcription_engine()) as session:
-        yield session
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise

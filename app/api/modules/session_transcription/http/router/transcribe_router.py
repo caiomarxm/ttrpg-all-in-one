@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
@@ -12,6 +13,8 @@ from modules.session_transcription.persistence.database import (
     get_session_transcription_session,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/sessions", tags=["session-transcription"])
 
 
@@ -23,12 +26,16 @@ def get_transcription_service(
 
 def _run_transcription_job(session_id: str, wav_paths: list[str]) -> None:
     settings = get_session_transcription_settings()
+    logger.info("background_transcription_started", extra={"session_id": session_id})
     with Session(get_session_transcription_engine()) as session:
         service = TranscriptionService(session, config=settings)
         try:
             service.run_transcription(session_id, wav_paths)
+            session.commit()
+            logger.info("background_transcription_completed", extra={"session_id": session_id})
         except Exception:
-            return
+            session.rollback()
+            logger.exception("background_transcription_failed", extra={"session_id": session_id})
 
 
 @router.post(
@@ -41,8 +48,10 @@ async def transcribe_session(
     body: TranscribeSessionRequest,
     background_tasks: BackgroundTasks,
     service: Annotated[TranscriptionService, Depends(get_transcription_service)],
+    session: Annotated[Session, Depends(get_session_transcription_session)],
 ) -> TranscribeSessionResponse:
     transcript = service.enqueue_transcription(session_id, body.wav_paths)
+    session.commit()
     background_tasks.add_task(_run_transcription_job, session_id, body.wav_paths)
     return TranscribeSessionResponse(
         session_id=session_id,

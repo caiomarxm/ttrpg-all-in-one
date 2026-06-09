@@ -78,6 +78,7 @@ def test_run_transcription_stores_completed_transcript(
 
     config = SessionTranscriptionSettings(
         RECORDINGS_DIR=str(tmp_path),
+        STORAGE_ENABLED=True,
         STORAGE_ENDPOINT_URL="http://localhost:9000",
     )
     service = TranscriptionService(
@@ -115,6 +116,7 @@ def test_run_transcription_fails_without_manifest(
 
     config = SessionTranscriptionSettings(
         RECORDINGS_DIR=str(tmp_path),
+        STORAGE_ENABLED=True,
         STORAGE_ENDPOINT_URL="http://localhost:9000",
     )
     service = TranscriptionService(

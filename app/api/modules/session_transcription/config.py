@@ -12,9 +12,10 @@ class SessionTranscriptionSettings(BaseSettings):
 
     WHISPER_BASE_URL: str = "http://localhost:8010/v1"
     WHISPER_API_KEY: str = "local-dev"
-    WHISPER_MODEL: str = "Systran/faster-distil-whisper-small"
+    WHISPER_MODEL: str = "Systran/faster-whisper-small"
     WHISPER_LANGUAGE: str = "pt"
 
+    STORAGE_ENABLED: bool = False
     STORAGE_ENDPOINT_URL: str = "http://localhost:9000"
     STORAGE_ACCESS_KEY: str = "minio"
     STORAGE_SECRET_KEY: str = "minio-dev-password"

@@ -48,7 +48,12 @@ class TranscriptionService:
         self._config = config or get_session_transcription_settings()
         self._repo = TranscriptRepository(session)
         self._whisper = whisper_client or WhisperClient(self._config)
-        self._storage = storage_client or StorageClient(self._config)
+        if storage_client is not None:
+            self._storage = storage_client
+        elif self._config.STORAGE_ENABLED:
+            self._storage = StorageClient(self._config)
+        else:
+            self._storage = None
 
     def enqueue_transcription(self, session_id: str, wav_paths: list[str]) -> SessionTranscriptionTranscript:
         existing = self._repo.find_by_session_id(session_id)
@@ -103,8 +108,9 @@ class TranscriptionService:
             if not wav_path.is_file():
                 raise FileNotFoundError(f"WAV file not found: {wav_path}")
 
-            object_key = f"{storage_prefix}/{wav_path.name}"
-            self._storage.upload_file(wav_path, object_key)
+            if self._storage is not None:
+                object_key = f"{storage_prefix}/{wav_path.name}"
+                self._storage.upload_file(wav_path, object_key)
             raw_segments = self._whisper.transcribe_wav(wav_path)
             all_segments.extend(reconcile_segments(raw_segments, manifest, wav_path))
 
